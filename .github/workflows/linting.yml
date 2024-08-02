@@ -2,6 +2,9 @@ name: "linting"
 
 on:
   workflow_call:
+    secrets:
+      PAT:
+        required: true
 
 permissions:
   pull-requests: read
@@ -73,6 +76,7 @@ jobs:
         with:
           repository: aztfmods/terraform-azure-workflows
           path: called
+          token: ${{ secrets.PAT }}
 
       - name: setup go
         uses: actions/setup-go@v5
