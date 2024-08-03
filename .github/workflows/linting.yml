@@ -43,6 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        token: ${{ secrets.PAT }}
 
       - uses: terraform-linters/setup-tflint@v4
         name: Setup TFLint
