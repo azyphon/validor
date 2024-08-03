@@ -68,7 +68,6 @@ jobs:
         continue-on-error: false
 
   tests:
-    global-tests:
     name: global tests
     runs-on: ubuntu-latest
     steps:
