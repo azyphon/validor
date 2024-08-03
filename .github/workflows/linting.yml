@@ -95,6 +95,7 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }} # should be able to handle forked PRs, because of the branch prefix
           ref: ${{ github.event.pull_request.head.sha }}
           path: caller
+          token: ${{ secrets.PAT }}
           fetch-depth: 0
 
       - name: run global tests
