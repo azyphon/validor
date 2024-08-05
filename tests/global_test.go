@@ -314,6 +314,11 @@ func (svv StandardVariableValidator) ValidateVariables(data string) []error {
 		errors = append(errors, formatError("variables missing in markdown:\n  %s", strings.Join(missingInMarkdown, "\n  ")))
 	}
 
+	missingInTerraform := findMissingItems(markdownVariables, variables)
+	if len(missingInTerraform) > 0 {
+		errors = append(errors, formatError("variables in markdown but missing in Terraform:\n  %s", strings.Join(missingInTerraform, "\n  ")))
+	}
+
 	return errors
 }
 
