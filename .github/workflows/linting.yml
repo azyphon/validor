@@ -1,5 +1,3 @@
-name: "linting"
-
 on:
   workflow_call:
     secrets:
@@ -11,7 +9,7 @@ permissions:
 
 jobs:
   validate-pr-title:
-    name: pr commit
+    name: commits
     runs-on: ubuntu-latest
     steps:
       - uses: amannn/action-semantic-pull-request@v5
@@ -70,7 +68,7 @@ jobs:
         continue-on-error: false
 
   tests:
-    name: global tests
+    name: global markdown tests
     runs-on: ubuntu-latest
     steps:
       - name: check out called repo
