@@ -171,11 +171,11 @@ func (s Section) ValidateSection(data string) []error {
 	headerLoc := flexibleHeaderPattern.FindStringIndex(data)
 
 	if headerLoc == nil {
-		errors = append(errors, formatError("incorrect header: expected '## %s', found 'not present'", s.Header))
+		errors = append(errors, compareHeaders(s.Header, ""))
 	} else {
 		actualHeader := strings.TrimSpace(data[headerLoc[0]:headerLoc[1]])
 		if actualHeader != "## "+s.Header {
-			errors = append(errors, formatError("incorrect header: expected '## %s', found '%s'", s.Header, actualHeader))
+			errors = append(errors, compareHeaders(s.Header, actualHeader[3:])) // Remove "## " prefix
 		}
 
 		if len(s.Columns) > 0 {
@@ -196,6 +196,18 @@ func (s Section) ValidateSection(data string) []error {
 	}
 
 	return errors
+}
+
+func compareHeaders(expected, actual string) error {
+	var mismatchedHeaders []string
+	if expected != actual {
+		if actual == "" {
+			mismatchedHeaders = append(mismatchedHeaders, fmt.Sprintf("expected '%s', found 'not present'", expected))
+		} else {
+			mismatchedHeaders = append(mismatchedHeaders, fmt.Sprintf("expected '%s', found '%s'", expected, actual))
+		}
+	}
+	return formatError("incorrect header:\n  %s", strings.Join(mismatchedHeaders, "\n  "))
 }
 
 func (mv *MarkdownValidator) ValidateFiles() []error {
@@ -616,7 +628,6 @@ func TestMarkdown(t *testing.T) {
 	}
 }
 
-//works
 //package main
 
 //import (
@@ -659,14 +670,19 @@ func TestMarkdown(t *testing.T) {
 //ValidateVariables(data string) []error
 //}
 
+//type OutputValidator interface {
+//ValidateOutputs(data string) []error
+//}
+
 //type MarkdownValidator struct {
-//readmePath       string
-//data             string
-//sections         []SectionValidator
-//files            []FileValidator
-//urlValidator     URLValidator
-//tfValidator      TerraformValidator
+//readmePath        string
+//data              string
+//sections          []SectionValidator
+//files             []FileValidator
+//urlValidator      URLValidator
+//tfValidator       TerraformValidator
 //variableValidator VariableValidator
+//outputValidator   OutputValidator
 //}
 
 //type Section struct {
@@ -683,6 +699,8 @@ func TestMarkdown(t *testing.T) {
 //type TerraformDefinitionValidator struct{}
 
 //type StandardVariableValidator struct{}
+
+//type StandardOutputValidator struct{}
 
 //type TerraformConfig struct {
 //Resource []Resource `hcl:"resource,block"`
@@ -735,16 +753,22 @@ func TestMarkdown(t *testing.T) {
 //RequiredFile{Name: absReadmePath},
 //RequiredFile{Name: filepath.Join(rootDir, "CONTRIBUTE.md")},
 //RequiredFile{Name: filepath.Join(rootDir, "LICENSE")},
+//RequiredFile{Name: filepath.Join(rootDir, "outputs.tf")},
+//RequiredFile{Name: filepath.Join(rootDir, "variables.tf")},
+//RequiredFile{Name: filepath.Join(rootDir, "main.tf")},
+//RequiredFile{Name: filepath.Join(rootDir, "terraform.tf")},
+//RequiredFile{Name: filepath.Join(rootDir, "Makefile")},
 //}
 
 //return &MarkdownValidator{
-//readmePath:       absReadmePath,
-//data:             string(data),
-//sections:         sections,
-//files:            files,
-//urlValidator:     StandardURLValidator{},
-//tfValidator:      TerraformDefinitionValidator{},
+//readmePath:        absReadmePath,
+//data:              string(data),
+//sections:          sections,
+//files:             files,
+//urlValidator:      StandardURLValidator{},
+//tfValidator:       TerraformDefinitionValidator{},
 //variableValidator: StandardVariableValidator{},
+//outputValidator:   StandardOutputValidator{},
 //}, nil
 //}
 
@@ -756,6 +780,7 @@ func TestMarkdown(t *testing.T) {
 //allErrors = append(allErrors, mv.ValidateURLs()...)
 //allErrors = append(allErrors, mv.ValidateTerraformDefinitions()...)
 //allErrors = append(allErrors, mv.ValidateVariables()...)
+//allErrors = append(allErrors, mv.ValidateOutputs()...)
 
 //return allErrors
 //}
@@ -917,6 +942,25 @@ func TestMarkdown(t *testing.T) {
 //return compareTerraformAndMarkdown(variables, markdownVariables, "Variables")
 //}
 
+//func (mv *MarkdownValidator) ValidateOutputs() []error {
+//return mv.outputValidator.ValidateOutputs(mv.data)
+//}
+
+//func (sov StandardOutputValidator) ValidateOutputs(data string) []error {
+//outputsPath := filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "caller", "outputs.tf")
+//outputs, err := extractOutputs(outputsPath)
+//if err != nil {
+//return []error{err}
+//}
+
+//markdownOutputs, err := extractMarkdownOutputs(data)
+//if err != nil {
+//return []error{err}
+//}
+
+//return compareTerraformAndMarkdown(outputs, markdownOutputs, "Outputs")
+//}
+
 //func extractVariables(filePath string) ([]string, error) {
 //content, err := os.ReadFile(filePath)
 //if err != nil {
@@ -956,8 +1000,51 @@ func TestMarkdown(t *testing.T) {
 //return variables, nil
 //}
 
+//func extractOutputs(filePath string) ([]string, error) {
+//content, err := os.ReadFile(filePath)
+//if err != nil {
+//return nil, fmt.Errorf("error reading file %s: %v", filePath, err)
+//}
+
+//parser := hclparse.NewParser()
+//file, diags := parser.ParseHCL(content, filePath)
+//if diags.HasErrors() {
+//return nil, fmt.Errorf("error parsing HCL: %v", diags)
+//}
+
+//var outputs []string
+//body := file.Body
+//hclContent, diags := body.Content(&hcl.BodySchema{
+//Blocks: []hcl.BlockHeaderSchema{
+//{Type: "output", LabelNames: []string{"name"}},
+//},
+//})
+//if diags.HasErrors() {
+//return nil, fmt.Errorf("error getting content: %v", diags)
+//}
+
+//for _, block := range hclContent.Blocks {
+//if block.Type == "output" {
+//if len(block.Labels) == 0 {
+//return nil, fmt.Errorf("output block without a name at %s", block.TypeRange.String())
+//}
+//outputs = append(outputs, block.Labels[0])
+//}
+//}
+
+//if len(outputs) == 0 {
+//return nil, fmt.Errorf("no outputs found in %s", filePath)
+//}
+
+//return outputs, nil
+//}
+
 //func extractMarkdownVariables(data string) ([]string, error) {
 //return extractMarkdownSection(data, "Inputs")
+//}
+
+//func extractMarkdownOutputs(data string) ([]string, error) {
+//return extractMarkdownSection(data, "Outputs")
 //}
 
 //func extractReadmeResources(data string) ([]string, error) {
@@ -1103,8 +1190,6 @@ func TestMarkdown(t *testing.T) {
 //}
 //return formatError("table under header: %s has incorrect column names:\n  %s", header, strings.Join(mismatchedColumns, "\n  "))
 //}
-
-//// New generalized functions
 
 //func extractMarkdownSection(data, sectionName string) ([]string, error) {
 //var items []string
