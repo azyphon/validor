@@ -124,7 +124,10 @@ func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
 		RequiredFile{Name: filepath.Join(rootDir, "CONTRIBUTE.md")},
 		RequiredFile{Name: filepath.Join(rootDir, "LICENSE")},
 		RequiredFile{Name: filepath.Join(rootDir, "outputs.tf")},
-		RequiredFile{Name: filepath.Join(rootDir, "variable.tf")},
+		RequiredFile{Name: filepath.Join(rootDir, "variables.tf")},
+		RequiredFile{Name: filepath.Join(rootDir, "main.tf")},
+		RequiredFile{Name: filepath.Join(rootDir, "terraform.tf")},
+		RequiredFile{Name: filepath.Join(rootDir, "Makefile")},
 	}
 
 	return &MarkdownValidator{
