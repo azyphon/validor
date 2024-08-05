@@ -276,19 +276,7 @@ func (tdv TerraformDefinitionValidator) ValidateTerraformDefinitions(data string
 		return []error{err}
 	}
 
-	var errors []error
-
-	missingInMarkdown := findMissingItems(tfResources, readmeResources)
-	if len(missingInMarkdown) > 0 {
-		errors = append(errors, formatError("missing in markdown:\n  %s", strings.Join(missingInMarkdown, "\n  ")))
-	}
-
-	missingInCode := findMissingItems(readmeResources, tfResources)
-	if len(missingInCode) > 0 {
-		errors = append(errors, formatError("missing in code:\n  %s", strings.Join(missingInCode, "\n  ")))
-	}
-
-	return errors
+	return compareTerraformAndMarkdown(tfResources, readmeResources, "Resources")
 }
 
 func (mv *MarkdownValidator) ValidateVariables() []error {
@@ -307,19 +295,7 @@ func (svv StandardVariableValidator) ValidateVariables(data string) []error {
 		return []error{err}
 	}
 
-	var errors []error
-
-	missingInMarkdown := findMissingItems(variables, markdownVariables)
-	if len(missingInMarkdown) > 0 {
-		errors = append(errors, formatError("variables missing in markdown:\n  %s", strings.Join(missingInMarkdown, "\n  ")))
-	}
-
-	missingInTerraform := findMissingItems(markdownVariables, variables)
-	if len(missingInTerraform) > 0 {
-		errors = append(errors, formatError("variables in markdown but missing in Terraform:\n  %s", strings.Join(missingInTerraform, "\n  ")))
-	}
-
-	return errors
+	return compareTerraformAndMarkdown(variables, markdownVariables, "Variables")
 }
 
 func extractVariables(filePath string) ([]string, error) {
@@ -362,23 +338,7 @@ func extractVariables(filePath string) ([]string, error) {
 }
 
 func extractMarkdownVariables(data string) ([]string, error) {
-	var variables []string
-	inputsPattern := regexp.MustCompile(`(?s)## Inputs.*?\n(.*?)\n##`)
-	inputsSection := inputsPattern.FindStringSubmatch(data)
-	if len(inputsSection) < 2 {
-		return nil, errors.New("inputs section not found or empty")
-	}
-
-	linePattern := regexp.MustCompile("\\|\\s*`([^`]+)`\\s*\\|")
-	matches := linePattern.FindAllStringSubmatch(inputsSection[1], -1)
-
-	for _, match := range matches {
-		if len(match) > 1 {
-			variables = append(variables, strings.TrimSpace(match[1]))
-		}
-	}
-
-	return variables, nil
+	return extractMarkdownSection(data, "Inputs")
 }
 
 func extractReadmeResources(data string) ([]string, error) {
@@ -525,6 +485,44 @@ func compareColumns(header string, expected, actual []string) error {
 	return formatError("table under header: %s has incorrect column names:\n  %s", header, strings.Join(mismatchedColumns, "\n  "))
 }
 
+// New generalized functions
+
+func extractMarkdownSection(data, sectionName string) ([]string, error) {
+	var items []string
+	sectionPattern := regexp.MustCompile(`(?s)## ` + sectionName + `.*?\n(.*?)\n##`)
+	sectionContent := sectionPattern.FindStringSubmatch(data)
+	if len(sectionContent) < 2 {
+		return nil, fmt.Errorf("%s section not found or empty", sectionName)
+	}
+
+	linePattern := regexp.MustCompile(`\|\s*` + "`([^`]+)`" + `\s*\|`)
+  matches := linePattern.FindAllStringSubmatch(sectionContent[1], -1)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			items = append(items, strings.TrimSpace(match[1]))
+		}
+	}
+
+	return items, nil
+}
+
+func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
+	var errors []error
+
+	missingInMarkdown := findMissingItems(tfItems, mdItems)
+	if len(missingInMarkdown) > 0 {
+		errors = append(errors, formatError("%s missing in markdown:\n  %s", itemType, strings.Join(missingInMarkdown, "\n  ")))
+	}
+
+	missingInTerraform := findMissingItems(mdItems, tfItems)
+	if len(missingInTerraform) > 0 {
+		errors = append(errors, formatError("%s in markdown but missing in Terraform:\n  %s", itemType, strings.Join(missingInTerraform, "\n  ")))
+	}
+
+	return errors
+}
+
 func TestMarkdown(t *testing.T) {
 	readmePath := "README.md"
 	if envPath := os.Getenv("README_PATH"); envPath != "" {
@@ -559,6 +557,7 @@ func TestMarkdown(t *testing.T) {
 	//"testing"
 
 	//"github.com/hashicorp/hcl/v2"
+	//"github.com/hashicorp/hcl/v2/hclparse"
 	//"mvdan.cc/xurls/v2"
 //)
 
@@ -582,13 +581,18 @@ func TestMarkdown(t *testing.T) {
 	//ValidateTerraformDefinitions(data string) []error
 //}
 
+//type VariableValidator interface {
+	//ValidateVariables(data string) []error
+//}
+
 //type MarkdownValidator struct {
-	//readmePath   string
-	//data         string
-	//sections     []SectionValidator
-	//files        []FileValidator
-	//urlValidator URLValidator
-	//tfValidator  TerraformValidator
+	//readmePath       string
+	//data             string
+	//sections         []SectionValidator
+	//files            []FileValidator
+	//urlValidator     URLValidator
+	//tfValidator      TerraformValidator
+	//variableValidator VariableValidator
 //}
 
 //type Section struct {
@@ -603,6 +607,8 @@ func TestMarkdown(t *testing.T) {
 //type StandardURLValidator struct{}
 
 //type TerraformDefinitionValidator struct{}
+
+//type StandardVariableValidator struct{}
 
 //type TerraformConfig struct {
 	//Resource []Resource `hcl:"resource,block"`
@@ -622,7 +628,6 @@ func TestMarkdown(t *testing.T) {
 //}
 
 //func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
-	//// Use environment variable set in github workflow
 	//if envPath := os.Getenv("README_PATH"); envPath != "" {
 		//readmePath = envPath
 	//}
@@ -659,12 +664,13 @@ func TestMarkdown(t *testing.T) {
 	//}
 
 	//return &MarkdownValidator{
-		//readmePath:   absReadmePath,
-		//data:         string(data),
-		//sections:     sections,
-		//files:        files,
-		//urlValidator: StandardURLValidator{},
-		//tfValidator:  TerraformDefinitionValidator{},
+		//readmePath:       absReadmePath,
+		//data:             string(data),
+		//sections:         sections,
+		//files:            files,
+		//urlValidator:     StandardURLValidator{},
+		//tfValidator:      TerraformDefinitionValidator{},
+		//variableValidator: StandardVariableValidator{},
 	//}, nil
 //}
 
@@ -675,6 +681,7 @@ func TestMarkdown(t *testing.T) {
 	//allErrors = append(allErrors, mv.ValidateFiles()...)
 	//allErrors = append(allErrors, mv.ValidateURLs()...)
 	//allErrors = append(allErrors, mv.ValidateTerraformDefinitions()...)
+	//allErrors = append(allErrors, mv.ValidateVariables()...)
 
 	//return allErrors
 //}
@@ -829,6 +836,96 @@ func TestMarkdown(t *testing.T) {
 	//return errors
 //}
 
+//func (mv *MarkdownValidator) ValidateVariables() []error {
+	//return mv.variableValidator.ValidateVariables(mv.data)
+//}
+
+//func (svv StandardVariableValidator) ValidateVariables(data string) []error {
+	//variablesPath := filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "caller", "variables.tf")
+	//variables, err := extractVariables(variablesPath)
+	//if err != nil {
+		//return []error{err}
+	//}
+
+	//markdownVariables, err := extractMarkdownVariables(data)
+	//if err != nil {
+		//return []error{err}
+	//}
+
+	//var errors []error
+
+	//missingInMarkdown := findMissingItems(variables, markdownVariables)
+	//if len(missingInMarkdown) > 0 {
+		//errors = append(errors, formatError("variables missing in markdown:\n  %s", strings.Join(missingInMarkdown, "\n  ")))
+	//}
+
+	//missingInTerraform := findMissingItems(markdownVariables, variables)
+	//if len(missingInTerraform) > 0 {
+		//errors = append(errors, formatError("variables in markdown but missing in Terraform:\n  %s", strings.Join(missingInTerraform, "\n  ")))
+	//}
+
+	//return errors
+//}
+
+//func extractVariables(filePath string) ([]string, error) {
+	//content, err := os.ReadFile(filePath)
+	//if err != nil {
+		//return nil, fmt.Errorf("error reading file %s: %v", filePath, err)
+	//}
+
+	//parser := hclparse.NewParser()
+	//file, diags := parser.ParseHCL(content, filePath)
+	//if diags.HasErrors() {
+		//return nil, fmt.Errorf("error parsing HCL: %v", diags)
+	//}
+
+	//var variables []string
+	//body := file.Body
+	//hclContent, diags := body.Content(&hcl.BodySchema{
+		//Blocks: []hcl.BlockHeaderSchema{
+			//{Type: "variable", LabelNames: []string{"name"}},
+		//},
+	//})
+	//if diags.HasErrors() {
+		//return nil, fmt.Errorf("error getting content: %v", diags)
+	//}
+
+	//for _, block := range hclContent.Blocks {
+		//if block.Type == "variable" {
+			//if len(block.Labels) == 0 {
+				//return nil, fmt.Errorf("variable block without a name at %s", block.TypeRange.String())
+			//}
+			//variables = append(variables, block.Labels[0])
+		//}
+	//}
+
+	//if len(variables) == 0 {
+		//return nil, fmt.Errorf("no variables found in %s", filePath)
+	//}
+
+	//return variables, nil
+//}
+
+//func extractMarkdownVariables(data string) ([]string, error) {
+	//var variables []string
+	//inputsPattern := regexp.MustCompile(`(?s)## Inputs.*?\n(.*?)\n##`)
+	//inputsSection := inputsPattern.FindStringSubmatch(data)
+	//if len(inputsSection) < 2 {
+		//return nil, errors.New("inputs section not found or empty")
+	//}
+
+	//linePattern := regexp.MustCompile("\\|\\s*`([^`]+)`\\s*\\|")
+	//matches := linePattern.FindAllStringSubmatch(inputsSection[1], -1)
+
+	//for _, match := range matches {
+		//if len(match) > 1 {
+			//variables = append(variables, strings.TrimSpace(match[1]))
+		//}
+	//}
+
+	//return variables, nil
+//}
+
 //func extractReadmeResources(data string) ([]string, error) {
 	//var resources []string
 	//resourcesPattern := regexp.MustCompile(`(?s)## Resources.*?\n(.*?)\n##`)
@@ -849,11 +946,9 @@ func TestMarkdown(t *testing.T) {
 	//return resources, nil
 //}
 
-
 //func extractTerraformResources() ([]string, error) {
 	//var resources []string
 
-	//// make use of builtin github environment variable
 	//mainPath := filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "caller", "main.tf")
 	//specificResources, err := extractFromFilePath(mainPath)
 	//if err != nil {
@@ -905,7 +1000,6 @@ func TestMarkdown(t *testing.T) {
 
 	//var resources []string
 
-	//// use regex to find resource and data blocks
 	//resourceRegex := regexp.MustCompile(`(?m)^resource\s+"(\w+)"\s+"`)
 	//dataRegex := regexp.MustCompile(`(?m)^data\s+"(\w+)"\s+"`)
 
@@ -994,3 +1088,4 @@ func TestMarkdown(t *testing.T) {
 		//}
 	//}
 //}
+
