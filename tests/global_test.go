@@ -333,7 +333,7 @@ func extractVariables(filePath string) ([]string, error) {
 	body := file.Body
 	hclContent, diags := body.Content(&hcl.BodySchema{
 		Blocks: []hcl.BlockHeaderSchema{
-			{Type: "variable"},
+			{Type: "variable", LabelNames: []string{"name"}},
 		},
 	})
 	if diags.HasErrors() {
@@ -341,9 +341,16 @@ func extractVariables(filePath string) ([]string, error) {
 	}
 
 	for _, block := range hclContent.Blocks {
-		if block.Type == "variable" && len(block.Labels) > 0 {
+		if block.Type == "variable" {
+			if len(block.Labels) == 0 {
+				return nil, fmt.Errorf("variable block without a name at %s", block.TypeRange.String())
+			}
 			variables = append(variables, block.Labels[0])
 		}
+	}
+
+	if len(variables) == 0 {
+		return nil, fmt.Errorf("no variables found in %s", filePath)
 	}
 
 	return variables, nil
