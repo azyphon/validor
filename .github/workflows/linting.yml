@@ -11,7 +11,11 @@ permissions:
 
 jobs:
   validate-pr-title:
-    if: ${{ !contains(join(github.event.pull_request.labels.*.name, ','), 'autorelease') }}
+    if: >-
+      ${{
+        !contains(github.event.pull_request.labels.*.name, 'autorelease') &&
+        !startsWith(github.event.pull_request.title, 'chore(main): release')
+      }}
     name: commits
     runs-on: ubuntu-latest
     steps:
@@ -28,7 +32,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   branch-naming-rules:
-    if: ${{ !contains(join(github.event.pull_request.labels.*.name, ','), 'autorelease') }}
+    if: >-
+      ${{
+        !contains(github.event.pull_request.labels.*.name, 'autorelease') &&
+        !startsWith(github.event.pull_request.title, 'chore(main): release')
+      }}
     name: branch name prefix
     runs-on: ubuntu-latest
     steps:
@@ -41,7 +49,11 @@ jobs:
           max_length: 60
 
   run-tflint:
-    if: ${{ !contains(join(github.event.pull_request.labels.*.name, ','), 'autorelease') }}
+    if: >-
+      ${{
+        !contains(github.event.pull_request.labels.*.name, 'autorelease') &&
+        !startsWith(github.event.pull_request.title, 'chore(main): release')
+      }}
     name: linting
     runs-on: ubuntu-latest
     steps:
@@ -73,7 +85,11 @@ jobs:
         continue-on-error: false
 
   tests:
-    if: ${{ !contains(join(github.event.pull_request.labels.*.name, ','), 'autorelease') }}
+    if: >-
+      ${{
+        !contains(github.event.pull_request.labels.*.name, 'autorelease') &&
+        !startsWith(github.event.pull_request.title, 'chore(main): release')
+      }}
     name: global markdown tests
     runs-on: ubuntu-latest
     steps:
