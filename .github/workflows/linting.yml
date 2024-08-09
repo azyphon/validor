@@ -33,7 +33,7 @@ jobs:
       - uses: deepakputhraya/action-branch-name@master
         with:
           regex: '^(feat|fix)\/[a-z0-9_-]+$'
-          allowed_prefixes: 'feat,fix'
+          allowed_prefixes: 'feat,fix, chore'
           ignore: main,develop
           min_length: 3
           max_length: 60
