@@ -10,13 +10,11 @@ permissions:
 
 jobs:
   validate-pr-title:
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'autorelease') && !contains(github.head_ref, 'release-please') }}
+    name: commits
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/check-release-pr
-        id: check_release
       - uses: amannn/action-semantic-pull-request@v5
-        if: steps.check_release.outputs.is_release_pr == 'false'
         with:
           types: |
             fix
@@ -29,13 +27,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   branch-naming-rules:
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'autorelease') && !contains(github.head_ref, 'release-please') }}
+    name: branch name prefix
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/check-release-pr
-        id: check_release
       - uses: deepakputhraya/action-branch-name@master
-        if: steps.check_release.outputs.is_release_pr == 'false'
         with:
           regex: '^(feat|fix)\/[a-z0-9_-]+$'
           allowed_prefixes: 'feat,fix'
@@ -44,32 +40,34 @@ jobs:
           max_length: 60
 
   run-tflint:
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'autorelease') && !contains(github.head_ref, 'release-please') }}
+    name: linting
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT }}
-      - uses: ./.github/actions/check-release-pr
-        id: check_release
       - uses: terraform-linters/setup-tflint@v4
-        if: steps.check_release.outputs.is_release_pr == 'false'
         name: Setup TFLint
         with:
           tflint_version: v0.47.0
-      - run: tflint
-        if: steps.check_release.outputs.is_release_pr == 'false'
-      - uses: hashicorp/setup-terraform@v3
-        if: steps.check_release.outputs.is_release_pr == 'false'
+      - name: Run TFLint
+        run: tflint
+      - name: setup terraform
+        uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
-      - run: |
-          terraform init
-          terraform validate
-          terraform fmt -check -recursive
-        if: steps.check_release.outputs.is_release_pr == 'false'
+      - name: terraform init
+        run: terraform init
+      - name: terraform validate
+        run: terraform validate
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
         continue-on-error: false
 
   tests:
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'autorelease') && !contains(github.head_ref, 'release-please') }}
+    name: global markdown tests
     runs-on: ubuntu-latest
     steps:
       - name: check out called repo
@@ -78,17 +76,14 @@ jobs:
           repository: aztfmods/terraform-azure-workflows
           path: called
           token: ${{ secrets.PAT }}
-      - uses: ./.github/actions/check-release-pr
-        id: check_release
-      - uses: actions/setup-go@v5
-        if: steps.check_release.outputs.is_release_pr == 'false'
+      - name: setup go
+        uses: actions/setup-go@v5
         with:
           check-latest: true
-      - run: go mod download
-        if: steps.check_release.outputs.is_release_pr == 'false'
+      - name: fetch go modules
         working-directory: called/tests
+        run: go mod download
       - name: check out caller repo
-        if: steps.check_release.outputs.is_release_pr == 'false'
         uses: actions/checkout@v4
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
@@ -96,8 +91,8 @@ jobs:
           path: caller
           token: ${{ secrets.PAT }}
           fetch-depth: 0
-      - run: go test -v ./...
-        if: steps.check_release.outputs.is_release_pr == 'false'
+      - name: run global tests
         working-directory: called/tests
+        run: go test -v ./...
         env:
           README_PATH: "${{ github.workspace }}/caller/README.md"
