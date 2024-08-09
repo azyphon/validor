@@ -1,16 +1,14 @@
 name: "linting"
-on:
-  workflow_call:
-    secrets:
-      PAT:
-        required: true
 
-permissions:
-  pull-requests: read
+on:
+  workflow_run:
+    workflows: ["release-please"]
+    types:
+      - completed
 
 jobs:
   validate-pr-title:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' && !startsWith(github.head_ref, 'release-please--') }}
     name: commits
     runs-on: ubuntu-latest
     steps:
@@ -27,7 +25,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   branch-naming-rules:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' && !startsWith(github.head_ref, 'release-please--') }}
     name: branch name prefix
     runs-on: ubuntu-latest
     steps:
@@ -40,7 +38,7 @@ jobs:
           max_length: 60
 
   run-tflint:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' && !startsWith(github.head_ref, 'release-please--') }}
     name: linting
     runs-on: ubuntu-latest
     steps:
@@ -66,7 +64,7 @@ jobs:
         continue-on-error: false
 
   tests:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' && !startsWith(github.head_ref, 'release-please--') }}
     name: global markdown tests
     runs-on: ubuntu-latest
     steps:
