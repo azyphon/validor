@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   validate-pr-title:
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'autorelease') }}
     name: commits
     runs-on: ubuntu-latest
     steps:
@@ -26,7 +25,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   branch-naming-rules:
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'autorelease') }}
     name: branch name prefix
     runs-on: ubuntu-latest
     steps:
@@ -39,33 +37,37 @@ jobs:
           max_length: 60
 
   run-tflint:
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'autorelease') }}
     name: linting
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT }}
+
       - uses: terraform-linters/setup-tflint@v4
         name: Setup TFLint
         with:
           tflint_version: v0.47.0
+
       - name: Run TFLint
         run: tflint
+
       - name: setup terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
+
       - name: terraform init
         run: terraform init
+
       - name: terraform validate
         run: terraform validate
+
       - name: terraform fmt
         run: terraform fmt -check -recursive
         continue-on-error: false
 
   tests:
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'autorelease') }}
     name: global markdown tests
     runs-on: ubuntu-latest
     steps:
@@ -75,13 +77,16 @@ jobs:
           repository: aztfmods/terraform-azure-workflows
           path: called
           token: ${{ secrets.PAT }}
+
       - name: setup go
         uses: actions/setup-go@v5
         with:
           check-latest: true
+
       - name: fetch go modules
         working-directory: called/tests
         run: go mod download
+
       - name: check out caller repo
         uses: actions/checkout@v4
         with:
@@ -90,6 +95,7 @@ jobs:
           path: caller
           token: ${{ secrets.PAT }}
           fetch-depth: 0
+
       - name: run global tests
         working-directory: called/tests
         run: go test -v ./...
