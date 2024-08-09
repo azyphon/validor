@@ -4,16 +4,12 @@ on:
     secrets:
       PAT:
         required: true
-  pull_request:
-    branches-ignore:
-      - release-please/**
 
 permissions:
   pull-requests: read
 
 jobs:
   validate-pr-title:
-    if: ${{ !startsWith(github.ref_name, 'release-please--') }}
     name: commits
     runs-on: ubuntu-latest
     steps:
@@ -30,7 +26,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   branch-naming-rules:
-    if: ${{ !startsWith(github.ref_name, 'release-please--') }}
     name: branch name prefix
     runs-on: ubuntu-latest
     steps:
@@ -43,7 +38,6 @@ jobs:
           max_length: 60
 
   run-tflint:
-    if: ${{ !startsWith(github.ref_name, 'release-please--') }}
     name: linting
     runs-on: ubuntu-latest
     steps:
@@ -69,7 +63,6 @@ jobs:
         continue-on-error: false
 
   tests:
-    if: ${{ !startsWith(github.ref_name, 'release-please--') }}
     name: global markdown tests
     runs-on: ubuntu-latest
     steps:
