@@ -1,20 +1,16 @@
 name: "linting"
-
 on:
   workflow_call:
     secrets:
       PAT:
         required: true
-  pull_request:
-    branches-ignore:
-      - 'release-please/**'
 
 permissions:
   pull-requests: read
 
 jobs:
   validate-pr-title:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') && github.event_name == 'pull_request' }}
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     name: commits
     runs-on: ubuntu-latest
     steps:
@@ -31,7 +27,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   branch-naming-rules:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') && github.event_name == 'pull_request' }}
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     name: branch name prefix
     runs-on: ubuntu-latest
     steps:
@@ -44,7 +40,7 @@ jobs:
           max_length: 60
 
   run-tflint:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') && github.event_name == 'pull_request' }}
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     name: linting
     runs-on: ubuntu-latest
     steps:
@@ -70,7 +66,7 @@ jobs:
         continue-on-error: false
 
   tests:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') && github.event_name == 'pull_request' }}
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     name: global markdown tests
     runs-on: ubuntu-latest
     steps:
@@ -100,3 +96,11 @@ jobs:
         run: go test -v ./...
         env:
           README_PATH: "${{ github.workspace }}/caller/README.md"
+
+  release-please:
+    if: startsWith(github.head_ref, 'release-please--')
+    name: "release-please noop"
+    runs-on: ubuntu-latest
+    steps:
+      - name: No-op for release-please
+        run: echo "This is a no-op for release-please PRs."
