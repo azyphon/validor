@@ -11,7 +11,8 @@ jobs:
   validate-pr-title:
     name: commits
     runs-on: ubuntu-latest
-    if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
+    #if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
+    if: ${{ github.event.action != 'edited' && github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
     steps:
       - uses: amannn/action-semantic-pull-request@v5
         with:
@@ -28,7 +29,8 @@ jobs:
   branch-naming-rules:
     name: branch name prefix
     runs-on: ubuntu-latest
-    if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
+    #if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
+    if: ${{ github.event.action != 'edited' && github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
     steps:
       - uses: deepakputhraya/action-branch-name@master
         with:
@@ -41,7 +43,8 @@ jobs:
   run-tflint:
     name: linting
     runs-on: ubuntu-latest
-    if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
+    #if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
+    if: ${{ github.event.action != 'edited' && github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -73,7 +76,8 @@ jobs:
   tests:
     name: global markdown tests
     runs-on: ubuntu-latest
-    if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
+    #if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
+    if: ${{ github.event.action != 'edited' && github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
     steps:
       - name: check out called repo
         uses: actions/checkout@v4
