@@ -1,4 +1,4 @@
-# workflows
+# validor
 
 This repository is home to a wide range of caller workflows designed for interoperability across our terraform module repositories.
 
