@@ -2,42 +2,60 @@ name: validate
 
 on:
   workflow_call:
-    inputs:
-      test:
-        required: false
-        type: string
-        default: complete
     secrets:
-      ARM_CLIENT_ID:
+      PAT:
         required: true
-      ARM_CLIENT_SECRET:
-        required: true
-      ARM_SUBSCRIPTION_ID:
-        required: true
-      ARM_TENANT_ID:
-        required: true
-      AZURE_CREDENTIALS:
-        required: true
+
+permissions:
+  pull-requests: read
 
 jobs:
-  validate:
-    name: validate
+  validate-pr-title:
+    name: commits
     runs-on: ubuntu-latest
-    environment : development
-    env:
-      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
-      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+    if: ${{ github.event.action != 'edited' && github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        with:
+          types: |
+            fix
+            feat
+            chore
+          ignoreLabels: |
+            autorelease
+            dependencies
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  branch-naming-rules:
+    name: branch name prefix
+    runs-on: ubuntu-latest
+    if: ${{ github.event.action != 'edited' && github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }} #make sure it stays skipped if updated
+    steps:
+      - uses: deepakputhraya/action-branch-name@master
+        with:
+          regex: '^(feat|fix|release-please--branches--main)(\/[a-z0-9_-]+)?$'
+          allowed_prefixes: 'feat,fix,release-please--branches--main'
+          ignore: main,develop
+          min_length: 3
+          max_length: 60
+
+  run-tflint:
+    name: linting
+    runs-on: ubuntu-latest
+    if: ${{ github.event.action != 'edited' && github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Azure Login
-        uses: azure/login@v1
         with:
-          creds: ${{ env.AZURE_CREDENTIALS }}
+          token: ${{ secrets.PAT }}
+
+      - uses: terraform-linters/setup-tflint@v4
+        name: Setup TFLint
+        with:
+          tflint_version: v0.47.0
+
+      - name: Run TFLint
+        run: tflint
 
       - name: setup terraform
         uses: hashicorp/setup-terraform@v3
@@ -47,19 +65,45 @@ jobs:
       - name: terraform init
         run: terraform init
 
+      - name: terraform validate
+        run: terraform validate
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+        continue-on-error: false
+
+  tests:
+    name: global markdown tests
+    runs-on: ubuntu-latest
+    if: ${{ github.event.action != 'edited' && github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
+    steps:
+      - name: check out called repo
+        uses: actions/checkout@v4
+        with:
+          repository: aztfmods/terraform-azure-workflows
+          path: called
+          token: ${{ secrets.PAT }}
+
       - name: setup go
         uses: actions/setup-go@v5
         with:
           check-latest: true
 
       - name: fetch go modules
-        working-directory: tests
+        working-directory: called/tests
         run: go mod download
 
-      - name: run tests
-        run: |
-          if [ "${{ inputs.test }}" = "test_extended" ]; then
-            make ${{ inputs.test }}
-          else
-            make test TF_PATH=${{ inputs.test }}
-          fi
+      - name: check out caller repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: caller
+          token: ${{ secrets.PAT }}
+          fetch-depth: 0
+
+      - name: run global tests
+        working-directory: called/tests
+        run: go test -v ./...
+        env:
+          README_PATH: "${{ github.workspace }}/caller/README.md"
