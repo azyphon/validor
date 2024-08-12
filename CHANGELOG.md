@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/aztfmods/validor/compare/v1.1.0...v1.2.0) (2024-08-12)
+
+
+### Features
+
+* change workflow names ([#11](https://github.com/aztfmods/validor/issues/11)) ([a931075](https://github.com/aztfmods/validor/commit/a931075f725bef4f6b868902e9172212a35be5d2))
+
 ## [1.1.0](https://github.com/aztfmods/validor/compare/v1.0.0...v1.1.0) (2024-08-11)
 
 
