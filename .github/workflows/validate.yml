@@ -46,6 +46,12 @@ jobs:
     if: ${{ github.event.action != 'edited' && github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
     steps:
       - uses: actions/checkout@v4
+<<<<<<< HEAD
+=======
+
+      - name: Azure Login
+        uses: azure/login@v2
+>>>>>>> main
         with:
           token: ${{ secrets.PAT }}
 
