@@ -49,10 +49,10 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
 
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          token: ${{ secrets.PAT }}
+      #- name: Azure Login
+        #uses: azure/login@v2
+        #with:
+          #token: ${{ secrets.PAT }}
 
       - uses: terraform-linters/setup-tflint@v4
         name: Setup TFLint
