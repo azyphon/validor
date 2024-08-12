@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/aztfmods/validor/compare/v1.2.0...v1.3.0) (2024-08-12)
+
+
+### Features
+
+* small cleanup ([#13](https://github.com/aztfmods/validor/issues/13)) ([fe9c013](https://github.com/aztfmods/validor/commit/fe9c01377c1cd5a10e90ba8a03a7a5890ef40f91))
+
 ## [1.2.0](https://github.com/aztfmods/validor/compare/v1.1.0...v1.2.0) (2024-08-12)
 
 
