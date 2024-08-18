@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.4.0](https://github.com/aztfmods/validor/compare/v1.3.0...v1.4.0) (2024-08-18)
+
+
+### Features
+
+* add better distinction between resource and data source extraction and cleanup comments ([#17](https://github.com/aztfmods/validor/issues/17)) ([c9b9204](https://github.com/aztfmods/validor/commit/c9b920467de2552ceb892fc113fa21c9eeb2e40f))
+* add token to checkout step ([e2af828](https://github.com/aztfmods/validor/commit/e2af828400f93e866b617013efb1ac4910126713))
+* **deps:** bump azure/login from 1 to 2 ([#16](https://github.com/aztfmods/validor/issues/16)) ([1d09bc7](https://github.com/aztfmods/validor/commit/1d09bc7a873f7ee0ad9e0583e35cdba732fd185e))
+* update code owners file ([#18](https://github.com/aztfmods/validor/issues/18)) ([bf91052](https://github.com/aztfmods/validor/commit/bf910527b9af9f682ee3198386c653776a6bb87e))
+
 ## [1.3.0](https://github.com/aztfmods/validor/compare/v1.2.0...v1.3.0) (2024-08-12)
 
 
