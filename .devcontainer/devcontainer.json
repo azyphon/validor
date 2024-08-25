@@ -1,0 +1,9 @@
+{
+    "name": "Go",
+    "image": "golang:latest",
+    "remoteUser": "vscode",
+    "postCreateCommand": "go install golang.org/x/tools/gopls@latest && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest",
+    "mounts": [
+        "source=${localEnv:HOME}/.config/nvim,target=/home/vscode/.config/nvim,type=bind,consistency=cached"
+    ]
+}
