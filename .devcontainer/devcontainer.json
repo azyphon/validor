@@ -2,5 +2,12 @@
     "name": "Go",
     "image": "golang:latest",
     "remoteUser": "root",
-    "postCreateCommand": "go install golang.org/x/tools/gopls@latest && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"
+    "features": {
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": "false",
+            "username": "vscode",
+            "upgradePackages": "false"
+        }
+    },
+    "postCreateCommand": "apt-get update && apt-get install -y cmake ninja-build gettext && go install golang.org/x/tools/gopls@latest && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"
 }
