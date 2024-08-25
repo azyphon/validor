@@ -1,18 +1,16 @@
 {
-    "name": "Go",
-    "build": {
-        "dockerfile": "Dockerfile"
-    },
-    "customizations": {
-        "vscode": {
-            "settings": {
-                "go.toolsManagement.checkForUpdates": "local",
-                "go.useLanguageServer": true,
-                "go.gopath": "/go",
-                "terminal.integrated.defaultProfile.linux": "zsh"
-            }
-        }
-    },
-    "remoteUser": "root",
-    "postCreateCommand": "go install golang.org/x/tools/gopls@latest && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"
+  "name": "Nix Development Environment",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/nix:1": {},
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true,
+      "upgradePackages": false
+    }
+  },
+  "postCreateCommand": "nix-env -iA nixpkgs.myPackages",
+  "mounts": [
+    "source=${localWorkspaceFolder}/config.nix,target=/root/.config/nixpkgs/config.nix,type=bind,consistency=cached"
+  ]
 }
