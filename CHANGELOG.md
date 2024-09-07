@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/aztfmods/validor/compare/v1.4.0...v1.5.0) (2024-09-07)
+
+
+### Features
+
+* add more files to validate ([#20](https://github.com/aztfmods/validor/issues/20)) ([014f517](https://github.com/aztfmods/validor/commit/014f5176f6ef249ece83eea6ec6e9f6050353ca9))
+* **deps:** bump github.com/hashicorp/hcl/v2 in /tests ([#19](https://github.com/aztfmods/validor/issues/19)) ([6969abe](https://github.com/aztfmods/validor/commit/6969abe9cef882406c7f57221ed3daddae055877))
+
 ## [1.4.0](https://github.com/aztfmods/validor/compare/v1.3.0...v1.4.0) (2024-08-18)
 
 
