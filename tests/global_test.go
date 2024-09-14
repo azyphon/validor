@@ -131,7 +131,7 @@ func (s Section) validate(rootNode ast.Node) []error {
 	// Traverse the AST to find the section header
 	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
 		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
-			text := extractText(heading)
+			text := strings.TrimSpace(extractText(heading))
 			if strings.EqualFold(text, s.Header) || strings.EqualFold(text, s.Header+"s") {
 				found = true
 
@@ -192,7 +192,7 @@ func extractTableHeaders(table *ast.Table) ([]string, error) {
 			if row, ok := rowNode.(*ast.TableRow); ok {
 				for _, cellNode := range row.GetChildren() {
 					if cell, ok := cellNode.(*ast.TableCell); ok {
-						headerText := extractTextFromNodes(cell.GetChildren())
+						headerText := strings.TrimSpace(extractTextFromNodes(cell.GetChildren()))
 						headers = append(headers, headerText)
 					}
 				}
@@ -507,7 +507,8 @@ func extractVariables(filePath string) ([]string, error) {
 
 	for _, block := range hclContent.Blocks {
 		if len(block.Labels) > 0 {
-			variables = append(variables, block.Labels[0])
+			variableName := strings.TrimSpace(block.Labels[0])
+			variables = append(variables, variableName)
 		}
 	}
 
@@ -540,7 +541,8 @@ func extractOutputs(filePath string) ([]string, error) {
 
 	for _, block := range hclContent.Blocks {
 		if len(block.Labels) > 0 {
-			outputs = append(outputs, block.Labels[0])
+			outputName := strings.TrimSpace(block.Labels[0])
+			outputs = append(outputs, outputName)
 		}
 	}
 
@@ -568,7 +570,7 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
 
 	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
 		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
-			text := extractText(heading)
+			text := strings.TrimSpace(extractText(heading))
 			if strings.EqualFold(text, sectionName) || strings.EqualFold(text, sectionName+"s") {
 				inTargetSection = true
 				return ast.GoToNext
@@ -587,7 +589,9 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
 								if len(cells) > 0 {
 									if cell, ok := cells[0].(*ast.TableCell); ok {
 										item := extractTextFromNodes(cell.GetChildren())
+										item = strings.TrimSpace(item)
 										item = strings.Trim(item, "`") // Remove backticks if present
+										item = strings.TrimSpace(item)
 										items = append(items, item)
 									}
 								}
@@ -621,7 +625,7 @@ func extractReadmeResources(data string) ([]string, []string, error) {
 
 	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
 		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
-			text := extractText(heading)
+			text := strings.TrimSpace(extractText(heading))
 			if strings.EqualFold(text, "Resources") {
 				inResourcesSection = true
 				return ast.GoToNext
@@ -642,8 +646,11 @@ func extractReadmeResources(data string) ([]string, []string, error) {
 									typeCell, ok2 := cells[1].(*ast.TableCell)
 									if ok1 && ok2 {
 										name := extractTextFromNodes(nameCell.GetChildren())
+										name = strings.TrimSpace(name)
 										name = strings.Trim(name, "[]") // Remove brackets
+										name = strings.TrimSpace(name)
 										resourceType := extractTextFromNodes(typeCell.GetChildren())
+										resourceType = strings.TrimSpace(resourceType)
 										if strings.EqualFold(resourceType, "resource") {
 											resources = append(resources, name)
 										} else if strings.EqualFold(resourceType, "data source") {
@@ -669,12 +676,17 @@ func extractReadmeResources(data string) ([]string, []string, error) {
 	return resources, dataSources, nil
 }
 
-// extractText extracts text from a node
+// extractText extracts text from a node, including code spans
 func extractText(node ast.Node) string {
 	var sb strings.Builder
 	ast.WalkFunc(node, func(n ast.Node, entering bool) ast.WalkStatus {
-		if textNode, ok := n.(*ast.Text); ok && entering {
-			sb.Write(textNode.Literal)
+		if entering {
+			switch tn := n.(type) {
+			case *ast.Text:
+				sb.Write(tn.Literal)
+			case *ast.Code:
+				sb.Write(tn.Leaf.Literal)
+			}
 		}
 		return ast.GoToNext
 	})
@@ -772,7 +784,7 @@ func extractFromFilePath(filePath string) ([]string, []string, error) {
 
 	for _, block := range hclContent.Blocks {
 		if len(block.Labels) >= 2 {
-			resourceType := block.Labels[0]
+			resourceType := strings.TrimSpace(block.Labels[0])
 			if block.Type == "resource" {
 				resources = append(resources, resourceType)
 			} else if block.Type == "data" {
@@ -803,7 +815,6 @@ func TestMarkdown(t *testing.T) {
 		}
 	}
 }
-
 
 //package main
 
