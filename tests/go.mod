@@ -3,6 +3,7 @@ module github.com/aztfmods/terraform-azure-workflows
 go 1.20
 
 require (
+	github.com/gomarkdown/markdown v0.0.0-20240730141124-034f12af3bf6
 	github.com/hashicorp/hcl/v2 v2.22.0
 	mvdan.cc/xurls/v2 v2.5.0
 )
