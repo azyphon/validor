@@ -211,50 +211,98 @@ type FileValidator struct {
 	files []string
 }
 
-// NewFileValidator creates a new FileValidator
 func NewFileValidator(readmePath string) *FileValidator {
-	rootDir := filepath.Dir(readmePath)
-	files := []string{
-		readmePath,
-		filepath.Join(rootDir, "CONTRIBUTING.md"),
-		filepath.Join(rootDir, "CODE_OF_CONDUCT.md"),
-		filepath.Join(rootDir, "SECURITY.md"),
-		filepath.Join(rootDir, "LICENSE"),
-		filepath.Join(rootDir, "outputs.tf"),
-		filepath.Join(rootDir, "variables.tf"),
-		filepath.Join(rootDir, "terraform.tf"),
-		filepath.Join(rootDir, "Makefile"),
-	}
-	return &FileValidator{files: files}
+    rootDir := filepath.Dir(readmePath)
+    files := []string{
+        readmePath,
+        filepath.Join(rootDir, "CONTRIBUTING.md"),
+        filepath.Join(rootDir, "CODE_OF_CONDUCT.md"),
+        filepath.Join(rootDir, "SECURITY.md"),
+        filepath.Join(rootDir, "LICENSE"),
+        filepath.Join(rootDir, "outputs.tf"),
+        filepath.Join(rootDir, "variables.tf"),
+        filepath.Join(rootDir, "terraform.tf"),
+        filepath.Join(rootDir, "Makefile"),
+    }
+    return &FileValidator{
+        files: files,
+    }
 }
+
+// NewFileValidator creates a new FileValidator
+//func NewFileValidator(readmePath string) *FileValidator {
+	//rootDir := filepath.Dir(readmePath)
+	//files := []string{
+		//readmePath,
+		//filepath.Join(rootDir, "CONTRIBUTING.md"),
+		//filepath.Join(rootDir, "CODE_OF_CONDUCT.md"),
+		//filepath.Join(rootDir, "SECURITY.md"),
+		//filepath.Join(rootDir, "LICENSE"),
+		//filepath.Join(rootDir, "outputs.tf"),
+		//filepath.Join(rootDir, "variables.tf"),
+		//filepath.Join(rootDir, "terraform.tf"),
+		//filepath.Join(rootDir, "Makefile"),
+	//}
+	//return &FileValidator{files: files}
+//}
 
 // Validate checks if required files exist and are not empty
 func (fv *FileValidator) Validate() []error {
-	var allErrors []error
-	for _, filePath := range fv.files {
-		allErrors = append(allErrors, validateFile(filePath)...)
-	}
-	return allErrors
+    var allErrors []error
+    for _, filePath := range fv.files {
+        allErrors = append(allErrors, validateFile(filePath)...)
+    }
+    return allErrors
 }
+
+// Validate checks if required files exist and are not empty
+//func (fv *FileValidator) Validate() []error {
+	//var allErrors []error
+	//for _, filePath := range fv.files {
+		//allErrors = append(allErrors, validateFile(filePath)...)
+	//}
+	//return allErrors
+//}
+
+// validateFile checks if a file exists and is not empty
+//func validateFile(filePath string) []error {
+	//var errors []error
+	//fileInfo, err := os.Stat(filePath)
+	//if err != nil {
+		//if os.IsNotExist(err) {
+			//errors = append(errors, formatError("file does not exist:\n  %s", filePath))
+		//} else {
+			//errors = append(errors, formatError("error accessing file:\n  %s\n  %v", filePath, err))
+		//}
+		//return errors
+	//}
+
+	//if fileInfo.Size() == 0 {
+		//errors = append(errors, formatError("file is empty:\n  %s", filePath))
+	//}
+
+	//return errors
+//}
 
 // validateFile checks if a file exists and is not empty
 func validateFile(filePath string) []error {
-	var errors []error
-	fileInfo, err := os.Stat(filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			errors = append(errors, formatError("file does not exist:\n  %s", filePath))
-		} else {
-			errors = append(errors, formatError("error accessing file:\n  %s\n  %v", filePath, err))
-		}
-		return errors
-	}
+    var errors []error
+    fileInfo, err := os.Stat(filePath)
+    baseName := filepath.Base(filePath)
+    if err != nil {
+        if os.IsNotExist(err) {
+            errors = append(errors, formatError("file does not exist:\n  %s", baseName))
+        } else {
+            errors = append(errors, formatError("error accessing file:\n  %s\n  %v", baseName, err))
+        }
+        return errors
+    }
 
-	if fileInfo.Size() == 0 {
-		errors = append(errors, formatError("file is empty:\n  %s", filePath))
-	}
+    if fileInfo.Size() == 0 {
+        errors = append(errors, formatError("file is empty:\n  %s", baseName))
+    }
 
-	return errors
+    return errors
 }
 
 // URLValidator validates URLs in the markdown
