@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/aztfmods/validor/compare/v1.5.0...v1.6.0) (2024-09-14)
+
+
+### Features
+
+* implement markdown parser ([#22](https://github.com/aztfmods/validor/issues/22)) ([fd68a3f](https://github.com/aztfmods/validor/commit/fd68a3ff0768cbd51a8af1172bd5a3a98983fe4e))
+
 ## [1.5.0](https://github.com/aztfmods/validor/compare/v1.4.0...v1.5.0) (2024-09-07)
 
 
