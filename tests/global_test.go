@@ -27,11 +27,12 @@ type Validator interface {
 type MarkdownValidator struct {
 	readmePath string
 	data       string
+	baseDir    string
 	validators []Validator
 }
 
 // NewMarkdownValidator creates a new MarkdownValidator
-func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
+func NewMarkdownValidator(readmePath, baseDir string) (*MarkdownValidator, error) {
 	if envPath := os.Getenv("README_PATH"); envPath != "" {
 		readmePath = envPath
 	}
@@ -50,17 +51,18 @@ func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
 	mv := &MarkdownValidator{
 		readmePath: absReadmePath,
 		data:       data,
+		baseDir:    baseDir,
 	}
 
 	// Initialize validators
 	mv.validators = []Validator{
 		NewSectionValidator(data),
-		NewFileValidator(absReadmePath),
+		NewFileValidator(absReadmePath, baseDir),
 		NewURLValidator(data),
-		NewTerraformDefinitionValidator(data),
-		NewItemValidator(data, "Variables", "variable", "Inputs", "variables.tf"),
-		NewItemValidator(data, "Outputs", "output", "Outputs", "outputs.tf"),
-		NewTerraformRequirementsValidator(data, filepath.Dir(absReadmePath)),
+		NewTerraformDefinitionValidator(data, baseDir),
+		NewItemValidator(data, "Variables", "variable", "Inputs", "variables.tf", baseDir),
+		NewItemValidator(data, "Outputs", "output", "Outputs", "outputs.tf", baseDir),
+		NewTerraformRequirementsValidator(data, baseDir),
 	}
 
 	return mv, nil
@@ -212,7 +214,7 @@ type FileValidator struct {
 }
 
 // NewFileValidator creates a new FileValidator
-func NewFileValidator(readmePath string) *FileValidator {
+func NewFileValidator(readmePath, baseDir string) *FileValidator {
 	rootDir := filepath.Dir(readmePath)
 	files := []string{
 		readmePath,
@@ -220,10 +222,10 @@ func NewFileValidator(readmePath string) *FileValidator {
 		filepath.Join(rootDir, "CODE_OF_CONDUCT.md"),
 		filepath.Join(rootDir, "SECURITY.md"),
 		filepath.Join(rootDir, "LICENSE"),
-		filepath.Join(rootDir, "outputs.tf"),
-		filepath.Join(rootDir, "variables.tf"),
-		filepath.Join(rootDir, "terraform.tf"),
-		filepath.Join(rootDir, "Makefile"),
+		filepath.Join(baseDir, "outputs.tf"),
+		filepath.Join(baseDir, "variables.tf"),
+		filepath.Join(baseDir, "terraform.tf"),
+		filepath.Join(baseDir, "Makefile"),
 	}
 	return &FileValidator{
 		files: files,
@@ -325,17 +327,18 @@ func validateSingleURL(url string) error {
 
 // TerraformDefinitionValidator validates Terraform definitions
 type TerraformDefinitionValidator struct {
-	data string
+	data   string
+	baseDir string
 }
 
 // NewTerraformDefinitionValidator creates a new TerraformDefinitionValidator
-func NewTerraformDefinitionValidator(data string) *TerraformDefinitionValidator {
-	return &TerraformDefinitionValidator{data: data}
+func NewTerraformDefinitionValidator(data, baseDir string) *TerraformDefinitionValidator {
+	return &TerraformDefinitionValidator{data: data, baseDir: baseDir}
 }
 
 // Validate compares Terraform resources with those documented in the markdown
 func (tdv *TerraformDefinitionValidator) Validate() []error {
-	tfResources, tfDataSources, err := extractTerraformResources()
+	tfResources, tfDataSources, err := extractTerraformResources(tdv.baseDir)
 	if err != nil {
 		return []error{err}
 	}
@@ -359,30 +362,24 @@ type ItemValidator struct {
 	blockType string
 	section   string
 	fileName  string
+	baseDir   string
 }
 
 // NewItemValidator creates a new ItemValidator
-func NewItemValidator(data, itemType, blockType, section, fileName string) *ItemValidator {
+func NewItemValidator(data, itemType, blockType, section, fileName, baseDir string) *ItemValidator {
 	return &ItemValidator{
 		data:      data,
 		itemType:  itemType,
 		blockType: blockType,
 		section:   section,
 		fileName:  fileName,
+		baseDir:   baseDir,
 	}
 }
 
 // Validate compares Terraform items with those documented in the markdown
 func (iv *ItemValidator) Validate() []error {
-	workspace := os.Getenv("GITHUB_WORKSPACE")
-	if workspace == "" {
-		var err error
-		workspace, err = os.Getwd()
-		if err != nil {
-			return []error{fmt.Errorf("failed to get current working directory: %v", err)}
-		}
-	}
-	filePath := filepath.Join(workspace, iv.fileName)
+	filePath := filepath.Join(iv.baseDir, iv.fileName)
 	tfItems, err := extractTerraformItems(filePath, iv.blockType)
 	if err != nil {
 		return []error{err}
@@ -398,41 +395,41 @@ func (iv *ItemValidator) Validate() []error {
 
 // TerraformRequirementsValidator validates Terraform requirements and providers
 type TerraformRequirementsValidator struct {
-	data         string
-	terraformDir string
+	data    string
+	baseDir string
 }
 
 // NewTerraformRequirementsValidator creates a new TerraformRequirementsValidator
-func NewTerraformRequirementsValidator(data, terraformDir string) *TerraformRequirementsValidator {
+func NewTerraformRequirementsValidator(data, baseDir string) *TerraformRequirementsValidator {
 	return &TerraformRequirementsValidator{
-		data:         data,
-		terraformDir: terraformDir,
+		data:    data,
+		baseDir: baseDir,
 	}
 }
 
 // Validate compares Terraform requirements and providers with those documented in the markdown
 func (trv *TerraformRequirementsValidator) Validate() []error {
 	// Extract required_version and required_providers from terraform.tf
-	tfRequirements, tfProviders, err := extractTerraformRequirements(trv.terraformDir)
+	terraformRequirements, terraformProviders, err := extractTerraformRequirements(trv.baseDir)
 	if err != nil {
 		return []error{err}
 	}
 
 	// Extract Requirements and Providers from the README
-	mdRequirements, err := extractReadmeRequirements(trv.data)
+	readmeRequirements, err := extractReadmeRequirements(trv.data)
 	if err != nil {
 		return []error{err}
 	}
 
-	mdProviders, err := extractReadmeProviders(trv.data)
+	readmeProviders, err := extractReadmeProviders(trv.data)
 	if err != nil {
 		return []error{err}
 	}
 
 	// Compare them
 	var errors []error
-	errors = append(errors, compareRequirements(tfRequirements, mdRequirements)...)
-	errors = append(errors, compareProviders(tfProviders, mdProviders)...)
+	errors = append(errors, compareRequirements(terraformRequirements, readmeRequirements)...)
+	errors = append(errors, compareProviders(terraformProviders, readmeProviders)...)
 
 	return errors
 }
@@ -718,19 +715,11 @@ func extractTextFromNodes(nodes []ast.Node) string {
 }
 
 // extractTerraformResources extracts resources and data sources from Terraform files
-func extractTerraformResources() ([]string, []string, error) {
+func extractTerraformResources(baseDir string) ([]string, []string, error) {
 	var resources []string
 	var dataSources []string
 
-	workspace := os.Getenv("GITHUB_WORKSPACE")
-	if workspace == "" {
-		var err error
-		workspace, err = os.Getwd()
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get current working directory: %v", err)
-		}
-	}
-	mainPath := filepath.Join(workspace, "main.tf")
+	mainPath := filepath.Join(baseDir, "main.tf")
 	specificResources, specificDataSources, err := extractFromFilePath(mainPath)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, nil, err
@@ -738,7 +727,7 @@ func extractTerraformResources() ([]string, []string, error) {
 	resources = append(resources, specificResources...)
 	dataSources = append(dataSources, specificDataSources...)
 
-	modulesPath := filepath.Join(workspace, "modules")
+	modulesPath := filepath.Join(baseDir, "modules")
 	modulesResources, modulesDataSources, err := extractRecursively(modulesPath)
 	if err != nil {
 		return nil, nil, err
@@ -829,16 +818,16 @@ func extractFromFilePath(filePath string) ([]string, []string, error) {
 }
 
 // extractTerraformRequirements extracts required_version and required_providers from terraform.tf
-func extractTerraformRequirements(terraformDir string) (map[string]string, map[string]string, error) {
+func extractTerraformRequirements(baseDir string) (map[string]string, map[string]string, error) {
 	// Read terraform.tf
-	terraformFilePath := filepath.Join(terraformDir, "terraform.tf")
-	fileContent, err := os.ReadFile(terraformFilePath)
+	terraformFilePath := filepath.Join(baseDir, "terraform.tf")
+	content, err := os.ReadFile(terraformFilePath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error reading file terraform.tf: %v", err)
 	}
 
 	parser := hclparse.NewParser()
-	file, parseDiags := parser.ParseHCL(fileContent, terraformFilePath)
+	file, parseDiags := parser.ParseHCL(content, terraformFilePath)
 	if parseDiags.HasErrors() {
 		return nil, nil, fmt.Errorf("error parsing HCL in terraform.tf: %v", parseDiags)
 	}
@@ -846,43 +835,39 @@ func extractTerraformRequirements(terraformDir string) (map[string]string, map[s
 	body := file.Body
 
 	// Extract required_version and required_providers
-	contentSchema := &hcl.BodySchema{
+	terraformContent, _, diags := body.PartialContent(&hcl.BodySchema{
 		Blocks: []hcl.BlockHeaderSchema{
 			{Type: "terraform"},
 		},
-	}
-
-	bodyContent, _, diags := body.PartialContent(contentSchema)
+	})
 	if diags.HasErrors() {
 		return nil, nil, fmt.Errorf("error parsing terraform block in terraform.tf: %v", diags)
 	}
 
-	if len(bodyContent.Blocks) == 0 {
+	if len(terraformContent.Blocks) == 0 {
 		return nil, nil, fmt.Errorf("terraform block not found in terraform.tf")
 	}
 
-	terraformBlock := bodyContent.Blocks[0]
+	terraformBlock := terraformContent.Blocks[0]
 	terraformBody := terraformBlock.Body
 
 	// Extract required_version and required_providers
 	requiredVersion := ""
 	requiredProviders := make(map[string]string)
 
-	contentSchema = &hcl.BodySchema{
+	terraformBlockContent, _, diags := terraformBody.PartialContent(&hcl.BodySchema{
 		Attributes: []hcl.AttributeSchema{
 			{Name: "required_version"},
 		},
 		Blocks: []hcl.BlockHeaderSchema{
 			{Type: "required_providers"},
 		},
-	}
-
-	bodyContent, _, diags = terraformBody.PartialContent(contentSchema)
+	})
 	if diags.HasErrors() {
 		return nil, nil, fmt.Errorf("error parsing content of terraform block in terraform.tf: %v", diags)
 	}
 
-	if attr, ok := bodyContent.Attributes["required_version"]; ok {
+	if attr, ok := terraformBlockContent.Attributes["required_version"]; ok {
 		// Evaluate the expression
 		expr := attr.Expr
 		val, diags := expr.Value(nil)
@@ -892,42 +877,42 @@ func extractTerraformRequirements(terraformDir string) (map[string]string, map[s
 		requiredVersion = val.AsString()
 	}
 
-	if len(bodyContent.Blocks) > 0 {
-		requiredProvidersBlock := bodyContent.Blocks[0]
-		requiredProvidersBody := requiredProvidersBlock.Body
+	for _, block := range terraformBlockContent.Blocks {
+		if block.Type == "required_providers" {
+			requiredProvidersBody := block.Body
 
-		// Get all attributes (providers)
-		contentSchema := &hcl.BodySchema{
-			Attributes: []hcl.AttributeSchema{},
-		}
-		providerContent, _, diags := requiredProvidersBody.PartialContent(contentSchema)
-		if diags.HasErrors() {
-			return nil, nil, fmt.Errorf("error parsing required_providers block: %v", diags)
-		}
-
-		// Since we don't know the attribute names ahead of time, we need to use providerContent.Attributes
-		for name, attr := range providerContent.Attributes {
-			// Evaluate the expression
-			expr := attr.Expr
-			val, diags := expr.Value(nil)
+			// Get all attributes (providers)
+			providersContent, _, diags := requiredProvidersBody.PartialContent(&hcl.BodySchema{
+				Attributes: []hcl.AttributeSchema{},
+			})
 			if diags.HasErrors() {
-				return nil, nil, fmt.Errorf("error evaluating provider %s: %v", name, diags)
+				return nil, nil, fmt.Errorf("error parsing required_providers block: %v", diags)
 			}
 
-			if val.Type().IsObjectType() || val.Type().IsMapType() {
-				// It's an object, get the "version" attribute
-				versionVal := val.AsValueMap()["version"]
-				if !versionVal.IsNull() {
-					version := versionVal.AsString()
-					requiredProviders[name] = version
-				} else {
-					return nil, nil, fmt.Errorf("provider %s does not have a 'version' attribute", name)
+			// Since we don't know the attribute names ahead of time, we need to use providersContent.Attributes
+			for name, attr := range providersContent.Attributes {
+				// Evaluate the expression
+				expr := attr.Expr
+				val, diags := expr.Value(nil)
+				if diags.HasErrors() {
+					return nil, nil, fmt.Errorf("error evaluating provider %s: %v", name, diags)
 				}
-			} else if val.Type().FriendlyName() == "string" {
-				// It's a string, treat it as the version
-				requiredProviders[name] = val.AsString()
-			} else {
-				return nil, nil, fmt.Errorf("unexpected type for provider %s: %s", name, val.Type().GoString())
+
+				if val.Type().IsObjectType() || val.Type().IsMapType() {
+					// It's an object, get the "version" attribute
+					versionVal := val.AsValueMap()["version"]
+					if !versionVal.IsNull() {
+						version := versionVal.AsString()
+						requiredProviders[name] = version
+					} else {
+						return nil, nil, fmt.Errorf("provider %s does not have a 'version' attribute", name)
+					}
+				} else if val.Type().FriendlyName() == "string" {
+					// It's a string, treat it as the version
+					requiredProviders[name] = val.AsString()
+				} else {
+					return nil, nil, fmt.Errorf("unexpected type for provider %s: %s", name, val.Type().GoString())
+				}
 			}
 		}
 	}
@@ -1121,11 +1106,16 @@ func compareProviders(tfProviders, mdProviders map[string]string) []error {
 // TestMarkdown runs the markdown validation tests
 func TestMarkdown(t *testing.T) {
 	readmePath := "README.md"
+	baseDir := "caller" // Adjust this to the correct base directory
+
 	if envPath := os.Getenv("README_PATH"); envPath != "" {
 		readmePath = envPath
 	}
+	if envBaseDir := os.Getenv("BASE_DIR"); envBaseDir != "" {
+		baseDir = envBaseDir
+	}
 
-	validator, err := NewMarkdownValidator(readmePath)
+	validator, err := NewMarkdownValidator(readmePath, baseDir)
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
