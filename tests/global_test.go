@@ -1,4 +1,3 @@
-// needs to be tested
 package main
 
 import (
@@ -373,7 +372,15 @@ func NewItemValidator(data, itemType, blockType, section, fileName string) *Item
 
 // Validate compares Terraform items with those documented in the markdown
 func (iv *ItemValidator) Validate() []error {
-	filePath := filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "caller", iv.fileName)
+	workspace := os.Getenv("GITHUB_WORKSPACE")
+	if workspace == "" {
+		var err error
+		workspace, err = os.Getwd()
+		if err != nil {
+			return []error{fmt.Errorf("failed to get current working directory: %v", err)}
+		}
+	}
+	filePath := filepath.Join(workspace, "caller", iv.fileName)
 	tfItems, err := extractTerraformItems(filePath, iv.blockType)
 	if err != nil {
 		return []error{err}
@@ -388,6 +395,7 @@ func (iv *ItemValidator) Validate() []error {
 }
 
 // Helper functions
+
 // compareHeaders compares expected and actual headers
 func compareHeaders(expected, actual string) error {
 	if expected != actual {
@@ -471,24 +479,40 @@ func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []e
 func extractTerraformItems(filePath string, blockType string) ([]string, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading file %s: %v", filePath, err)
+		return nil, fmt.Errorf("error reading file %s: %v", filepath.Base(filePath), err)
 	}
 
 	parser := hclparse.NewParser()
-	file, diags := parser.ParseHCL(content, filePath)
-	if diags.HasErrors() {
-		return nil, fmt.Errorf("error parsing HCL: %v", diags)
+	file, parseDiags := parser.ParseHCL(content, filePath)
+	if parseDiags.HasErrors() {
+		return nil, fmt.Errorf("error parsing HCL in %s: %v", filepath.Base(filePath), parseDiags)
 	}
 
 	var items []string
 	body := file.Body
-	hclContent, diags := body.Content(&hcl.BodySchema{
+
+	// Initialize diagnostics variable
+	var diags hcl.Diagnostics
+
+	// Use PartialContent to extract only the specified block type
+	hclContent, _, contentDiags := body.PartialContent(&hcl.BodySchema{
 		Blocks: []hcl.BlockHeaderSchema{
 			{Type: blockType, LabelNames: []string{"name"}},
 		},
 	})
+
+	// Append diagnostics
+	diags = append(diags, contentDiags...)
+
+	// Filter out diagnostics related to unsupported block types
+	diags = filterUnsupportedBlockDiagnostics(diags)
 	if diags.HasErrors() {
-		return nil, fmt.Errorf("error getting content: %v", diags)
+		return nil, fmt.Errorf("error getting content from %s: %v", filepath.Base(filePath), diags)
+	}
+
+	if hclContent == nil {
+		// No relevant blocks found
+		return items, nil
 	}
 
 	for _, block := range hclContent.Blocks {
@@ -499,6 +523,18 @@ func extractTerraformItems(filePath string, blockType string) ([]string, error) 
 	}
 
 	return items, nil
+}
+
+// filterUnsupportedBlockDiagnostics filters out diagnostics related to unsupported block types
+func filterUnsupportedBlockDiagnostics(diags hcl.Diagnostics) hcl.Diagnostics {
+	var filteredDiags hcl.Diagnostics
+	for _, diag := range diags {
+		if diag.Severity == hcl.DiagError && strings.Contains(diag.Summary, "Unsupported block type") {
+			continue
+		}
+		filteredDiags = append(filteredDiags, diag)
+	}
+	return filteredDiags
 }
 
 // extractMarkdownSectionItems extracts items from a markdown section
@@ -649,15 +685,23 @@ func extractTerraformResources() ([]string, []string, error) {
 	var resources []string
 	var dataSources []string
 
-	mainPath := filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "caller", "main.tf")
+	workspace := os.Getenv("GITHUB_WORKSPACE")
+	if workspace == "" {
+		var err error
+		workspace, err = os.Getwd()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get current working directory: %v", err)
+		}
+	}
+	mainPath := filepath.Join(workspace, "caller", "main.tf")
 	specificResources, specificDataSources, err := extractFromFilePath(mainPath)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		return nil, nil, err
 	}
 	resources = append(resources, specificResources...)
 	dataSources = append(dataSources, specificDataSources...)
 
-	modulesPath := filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "caller", "modules")
+	modulesPath := filepath.Join(workspace, "caller", "modules")
 	modulesResources, modulesDataSources, err := extractRecursively(modulesPath)
 	if err != nil {
 		return nil, nil, err
@@ -701,27 +745,42 @@ func extractRecursively(dirPath string) ([]string, []string, error) {
 func extractFromFilePath(filePath string) ([]string, []string, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error reading file %s: %v", filePath, err)
+		return nil, nil, fmt.Errorf("error reading file %s: %v", filepath.Base(filePath), err)
 	}
 
 	parser := hclparse.NewParser()
-	file, diags := parser.ParseHCL(content, filePath)
-	if diags.HasErrors() {
-		return nil, nil, fmt.Errorf("error parsing HCL: %v", diags)
+	file, parseDiags := parser.ParseHCL(content, filePath)
+	if parseDiags.HasErrors() {
+		return nil, nil, fmt.Errorf("error parsing HCL in %s: %v", filepath.Base(filePath), parseDiags)
 	}
 
 	var resources []string
 	var dataSources []string
-
 	body := file.Body
-	hclContent, diags := body.Content(&hcl.BodySchema{
+
+	// Initialize diagnostics variable
+	var diags hcl.Diagnostics
+
+	// Use PartialContent to allow unknown blocks
+	hclContent, _, contentDiags := body.PartialContent(&hcl.BodySchema{
 		Blocks: []hcl.BlockHeaderSchema{
 			{Type: "resource", LabelNames: []string{"type", "name"}},
 			{Type: "data", LabelNames: []string{"type", "name"}},
 		},
 	})
+
+	// Append diagnostics
+	diags = append(diags, contentDiags...)
+
+	// Filter out diagnostics related to unsupported block types
+	diags = filterUnsupportedBlockDiagnostics(diags)
 	if diags.HasErrors() {
-		return nil, nil, fmt.Errorf("error getting content: %v", diags)
+		return nil, nil, fmt.Errorf("error getting content from %s: %v", filepath.Base(filePath), diags)
+	}
+
+	if hclContent == nil {
+		// No relevant blocks found
+		return resources, dataSources, nil
 	}
 
 	for _, block := range hclContent.Blocks {
