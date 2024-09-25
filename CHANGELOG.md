@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/aztfmods/validor/compare/v1.6.0...v1.6.1) (2024-09-25)
+
+
+### Bug Fixes
+
+* fix submodule hcl parsing and validation ([#24](https://github.com/aztfmods/validor/issues/24)) ([ff4bfa3](https://github.com/aztfmods/validor/commit/ff4bfa38e36e6534e07d79fa73626a61da9b0698))
+
 ## [1.6.0](https://github.com/aztfmods/validor/compare/v1.5.0...v1.6.0) (2024-09-14)
 
 
