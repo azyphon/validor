@@ -26,12 +26,12 @@ type Validator interface {
 
 // MarkdownValidator orchestrates all validations
 type MarkdownValidator struct {
-	readmePath        string
-	data              string
-	tfDocs            string
-	nonTFDocsContent  string
-	validators        []Validator
-	tfDocsValidator   Validator
+	readmePath         string
+	data               string
+	tfDocs             string
+	nonTFDocsContent   string
+	validators         []Validator
+	tfDocsValidator    Validator
 	nonTFDocsValidator Validator
 }
 
@@ -912,7 +912,6 @@ func TestMarkdown(t *testing.T) {
 		t.FailNow()
 	}
 }
-
 
 //package main
 
