@@ -160,14 +160,31 @@ func (s Section) validate(rootNode ast.Node) []error {
 	found := false
 
 	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
+		if !entering {
+			return ast.GoToNext
+		}
+		if heading, ok := node.(*ast.Heading); ok && heading.Level == 2 {
 			text := strings.TrimSpace(extractText(heading))
 			if strings.EqualFold(text, s.Header) || strings.EqualFold(text, s.Header+"s") {
 				found = true
 
-				// Check for content after the header
-				nextNode := getNextSibling(node)
-				if nextNode == nil || isNextHeader(nextNode) {
+				// Get section content
+				content := getSectionContent(rootNode, heading)
+
+				// Check if any list or paragraph nodes exist
+				hasContent := false
+				for _, n := range content {
+					switch n.(type) {
+					case *ast.List, *ast.Paragraph:
+						hasContent = true
+						break
+					}
+					if hasContent {
+						break
+					}
+				}
+
+				if !hasContent {
 					errors = append(errors, fmt.Errorf("empty section: %s", s.Header))
 				}
 
@@ -182,6 +199,32 @@ func (s Section) validate(rootNode ast.Node) []error {
 	}
 
 	return errors
+}
+
+// getSectionContent collects all nodes under a given heading until the next heading of the same level
+func getSectionContent(root ast.Node, heading *ast.Heading) []ast.Node {
+	var content []ast.Node
+	startCollecting := false
+
+	ast.WalkFunc(root, func(node ast.Node, entering bool) ast.WalkStatus {
+		if !entering {
+			return ast.GoToNext
+		}
+		if h, ok := node.(*ast.Heading); ok && h.Level == heading.Level && h != heading {
+			// Reached the next heading of the same level
+			return ast.Terminate
+		}
+		if node == heading {
+			startCollecting = true
+			return ast.GoToNext
+		}
+		if startCollecting {
+			content = append(content, node)
+		}
+		return ast.GoToNext
+	})
+
+	return content
 }
 
 // TFDocsSectionValidator validates sections within TF Docs
