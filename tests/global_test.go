@@ -58,7 +58,9 @@ func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
 		NewFileValidator(absReadmePath),
 		NewURLValidator(data),
 		NewTerraformDefinitionValidator(data),
-		NewItemValidator(data, "Variables", "variable", "Inputs", "variables.tf"),
+		NewItemValidator(data, "Resources", "resource", "Resources", "main.tf"),
+		NewItemValidator(data, "Data Sources", "data", "Data Sources", "main.tf"),
+		NewItemValidator(data, "Inputs", "variable", "Inputs", "variables.tf"),
 		NewItemValidator(data, "Outputs", "output", "Outputs", "outputs.tf"),
 	}
 
@@ -69,7 +71,10 @@ func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
 func (mv *MarkdownValidator) Validate() []error {
 	var allErrors []error
 	for _, validator := range mv.validators {
-		allErrors = append(allErrors, validator.Validate()...)
+		errs := validator.Validate()
+		for _, err := range errs {
+			allErrors = append(allErrors, err)
+		}
 	}
 	return allErrors
 }
@@ -158,6 +163,7 @@ type FileValidator struct {
 	files []string
 }
 
+// NewFileValidator creates a new FileValidator
 func NewFileValidator(readmePath string) *FileValidator {
 	rootDir := filepath.Dir(readmePath)
 	files := []string{
@@ -210,7 +216,7 @@ func NewTerraformDefinitionValidator(data string) *TerraformDefinitionValidator 
 	return &TerraformDefinitionValidator{data: data}
 }
 
-// Validate compares Terraform resources with those documented in the markdown
+// Validate compares Terraform resources and data sources with those documented in the markdown
 func (tdv *TerraformDefinitionValidator) Validate() []error {
 	tfResources, tfDataSources, err := extractTerraformResources()
 	if err != nil {
@@ -222,9 +228,14 @@ func (tdv *TerraformDefinitionValidator) Validate() []error {
 		return []error{err}
 	}
 
+	readmeDataSources, err := extractMarkdownSectionItems(tdv.data, "Data Sources")
+	if err != nil {
+		return []error{err}
+	}
+
 	var errors []error
 	errors = append(errors, compareTerraformAndMarkdown(tfResources, readmeResources, "Resources")...)
-	errors = append(errors, compareTerraformAndMarkdown(tfDataSources, readmeResources, "Data Sources")...)
+	errors = append(errors, compareTerraformAndMarkdown(tfDataSources, readmeDataSources, "Data Sources")...)
 
 	return errors
 }
@@ -265,20 +276,28 @@ func (iv *ItemValidator) Validate() []error {
 		return []error{err}
 	}
 
-	mdItems, err := extractMarkdownSectionItems(iv.data, iv.section)
+	var mdItems []string
+	// Attempt to extract from the main section
+	items, err := extractMarkdownSectionItems(iv.data, iv.section)
 	if err != nil {
-		// Try with "Required Inputs" and "Optional Inputs" for Inputs
+		// If the main section isn't found, try aggregating from subsections
 		if iv.section == "Inputs" {
 			requiredInputs, err1 := extractMarkdownSectionItems(iv.data, "Required Inputs")
 			optionalInputs, err2 := extractMarkdownSectionItems(iv.data, "Optional Inputs")
-			if err1 == nil || err2 == nil {
-				mdItems = append(requiredInputs, optionalInputs...)
-			} else {
-				return []error{err}
+			if err1 == nil {
+				mdItems = append(mdItems, requiredInputs...)
+			}
+			if err2 == nil {
+				mdItems = append(mdItems, optionalInputs...)
+			}
+			if len(mdItems) == 0 {
+				return []error{fmt.Errorf("no inputs found in markdown")}
 			}
 		} else {
 			return []error{err}
 		}
+	} else {
+		mdItems = items
 	}
 
 	return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
@@ -452,13 +471,20 @@ func extractItemsFromList(list *ast.List) []string {
 func extractItemFromText(text string) string {
 	re := regexp.MustCompile(`<a name="[^"]+"></a>\s*\[([^\]]+)\]|^(\S+)`)
 	match := re.FindStringSubmatch(text)
+	var item string
 	if len(match) > 1 {
 		if match[1] != "" {
-			return match[1]
+			item = match[1]
+		} else {
+			item = match[2]
 		}
-		return match[2]
 	}
-	return ""
+	// Extract the resource type by removing the instance suffix
+	if strings.Contains(item, ".") {
+		parts := strings.SplitN(item, ".", 2)
+		return parts[0]
+	}
+	return item
 }
 
 func extractTerraformResources() ([]string, []string, error) {
@@ -638,14 +664,39 @@ func extractTerraformItems(filePath string, blockType string) ([]string, error) 
 func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
 	var errors []error
 
-	missingInMarkdown := findMissingItems(tfItems, mdItems)
+	// Remove duplicates and normalize case
+	tfSet := make(map[string]struct{})
+	for _, item := range tfItems {
+		tfSet[strings.ToLower(item)] = struct{}{}
+	}
+
+	mdSet := make(map[string]struct{})
+	for _, item := range mdItems {
+		mdSet[strings.ToLower(item)] = struct{}{}
+	}
+
+	// Find items missing in markdown
+	var missingInMarkdown []string
+	for item := range tfSet {
+		if _, found := mdSet[item]; !found {
+			missingInMarkdown = append(missingInMarkdown, item)
+		}
+	}
+
+	// Find items in markdown but missing in Terraform
+	var missingInTerraform []string
+	for item := range mdSet {
+		if _, found := tfSet[item]; !found {
+			missingInTerraform = append(missingInTerraform, item)
+		}
+	}
+
 	if len(missingInMarkdown) > 0 {
 		errors = append(errors, fmt.Errorf("%s missing in markdown: %s", itemType, strings.Join(missingInMarkdown, ", ")))
 	}
 
-	missingInTerraform := findMissingItems(mdItems, tfItems)
 	if len(missingInTerraform) > 0 {
-		errors = append(errors, fmt.Errorf("%s in markdown but missing in Terraform: %s", itemType, strings.Join(missingInTerraform, ", ")))
+		errors = append(errors, fmt.Errorf("%s listed in markdown but not found in Terraform: %s", itemType, strings.Join(missingInTerraform, ", ")))
 	}
 
 	return errors
@@ -681,6 +732,7 @@ func TestMarkdown(t *testing.T) {
 		for _, err := range errors {
 			t.Errorf("Validation error: %v", err)
 		}
+		t.FailNow()
 	}
 }
 
