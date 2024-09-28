@@ -26,10 +26,13 @@ type Validator interface {
 
 // MarkdownValidator orchestrates all validations
 type MarkdownValidator struct {
-	readmePath string
-	data       string
-	tfDocs     string
-	validators []Validator
+	readmePath        string
+	data              string
+	tfDocs            string
+	nonTFDocsContent  string
+	validators        []Validator
+	tfDocsValidator   Validator
+	nonTFDocsValidator Validator
 }
 
 // NewMarkdownValidator creates a new MarkdownValidator
@@ -54,16 +57,24 @@ func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
 		return nil, fmt.Errorf("failed to extract TF Docs: %v", err)
 	}
 
+	nonTFDocsContent, err := extractNonTFDocsContent(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract non-TF Docs content: %v", err)
+	}
+
 	mv := &MarkdownValidator{
-		readmePath: absReadmePath,
-		data:       data,
-		tfDocs:     tfDocs,
+		readmePath:       absReadmePath,
+		data:             data,
+		tfDocs:           tfDocs,
+		nonTFDocsContent: nonTFDocsContent,
 	}
 
 	// Initialize validators
+	mv.tfDocsValidator = NewTFDocsSectionValidator(tfDocs)
+	mv.nonTFDocsValidator = NewSectionValidator(nonTFDocsContent)
 	mv.validators = []Validator{
-		NewSectionValidator(data),
-		NewTFDocsSectionValidator(tfDocs),
+		mv.nonTFDocsValidator,
+		mv.tfDocsValidator,
 		NewFileValidator(absReadmePath),
 		NewURLValidator(data),
 		NewTerraformDefinitionValidator(tfDocs),
@@ -107,6 +118,28 @@ func extractTFDocs(data string) (string, error) {
 	tfDocs := strings.TrimSpace(data[beginIdx:endIdx])
 	log.Printf("Extracted TF Docs:\n%s", tfDocs) // Debugging statement
 	return tfDocs, nil
+}
+
+// extractNonTFDocsContent extracts the content outside the TF Docs block
+func extractNonTFDocsContent(data string) (string, error) {
+	beginMarker := "<!-- BEGIN_TF_DOCS -->"
+	endMarker := "<!-- END_TF_DOCS -->"
+
+	beginIdx := strings.Index(data, beginMarker)
+	if beginIdx == -1 {
+		return data, nil // No TF Docs block found; return entire content
+	}
+	beforeTF := strings.TrimSpace(data[:beginIdx])
+
+	endIdx := strings.Index(data, endMarker)
+	if endIdx == -1 {
+		return "", fmt.Errorf("end marker %s not found after begin marker", endMarker)
+	}
+	afterTF := strings.TrimSpace(data[endIdx+len(endMarker):])
+
+	nonTFDocs := strings.Join([]string{beforeTF, afterTF}, "\n\n")
+	log.Printf("Extracted Non-TF Docs Content:\n%s", nonTFDocs) // Debugging statement
+	return nonTFDocs, nil
 }
 
 // Section represents a section in the markdown file
@@ -171,11 +204,16 @@ func (s Section) validate(rootNode ast.Node) []error {
 				// Get section content
 				content := getSectionContent(rootNode, heading)
 
-				// Check if any list or paragraph nodes exist
+				// Log the node types within the section
+				for _, n := range content {
+					log.Printf("Section '%s' - Node type: %T", s.Header, n)
+				}
+
+				// Check if any list, paragraph, table, or code block nodes exist
 				hasContent := false
 				for _, n := range content {
 					switch n.(type) {
-					case *ast.List, *ast.Paragraph:
+					case *ast.List, *ast.Paragraph, *ast.Table, *ast.CodeBlock, *ast.BlockQuote:
 						hasContent = true
 						break
 					}
@@ -207,16 +245,16 @@ func getSectionContent(root ast.Node, heading *ast.Heading) []ast.Node {
 	startCollecting := false
 
 	ast.WalkFunc(root, func(node ast.Node, entering bool) ast.WalkStatus {
+		if node == heading {
+			startCollecting = true
+			return ast.GoToNext
+		}
 		if !entering {
 			return ast.GoToNext
 		}
 		if h, ok := node.(*ast.Heading); ok && h.Level == heading.Level && h != heading {
 			// Reached the next heading of the same level
 			return ast.Terminate
-		}
-		if node == heading {
-			startCollecting = true
-			return ast.GoToNext
 		}
 		if startCollecting {
 			content = append(content, node)
@@ -356,7 +394,7 @@ func (tdv *TerraformDefinitionValidator) Validate() []error {
 	}
 
 	log.Printf("Classified Resource Types: %+v", readmeResourceTypes)      // Debugging statement
-	log.Printf("Classified Data Sources: %+v", readmeDataSources)        // Debugging statement
+	log.Printf("Classified Data Sources: %+v", readmeDataSources)          // Debugging statement
 
 	var errors []error
 	errors = append(errors, compareTerraformAndMarkdown(tfResources, readmeResourceTypes, "Resources")...)
@@ -435,25 +473,6 @@ func (iv *ItemValidator) Validate() []error {
 }
 
 // Helper functions
-
-func isNextHeader(node ast.Node) bool {
-	_, ok := node.(*ast.Heading)
-	return ok
-}
-
-func getNextSibling(node ast.Node) ast.Node {
-	parent := node.GetParent()
-	if parent == nil {
-		return nil
-	}
-	children := parent.GetChildren()
-	for i, n := range children {
-		if n == node && i+1 < len(children) {
-			return children[i+1]
-		}
-	}
-	return nil
-}
 
 func extractText(node ast.Node) string {
 	var sb strings.Builder
@@ -893,6 +912,7 @@ func TestMarkdown(t *testing.T) {
 		t.FailNow()
 	}
 }
+
 
 //package main
 
