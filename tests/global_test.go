@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -67,7 +68,6 @@ func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
 		NewURLValidator(data),
 		NewTerraformDefinitionValidator(tfDocs),
 		NewItemValidator(tfDocs, "Resources", "resource", "Resources", "main.tf"),
-		NewItemValidator(tfDocs, "Data Sources", "data", "Data Sources", "main.tf"),
 		NewItemValidator(tfDocs, "Inputs", "variable", "Inputs", "variables.tf"),
 		NewItemValidator(tfDocs, "Outputs", "output", "Outputs", "outputs.tf"),
 	}
@@ -81,6 +81,7 @@ func (mv *MarkdownValidator) Validate() []error {
 	for _, validator := range mv.validators {
 		errs := validator.Validate()
 		for _, err := range errs {
+			log.Printf("Validation error: %v", err) // Debugging statement
 			allErrors = append(allErrors, err)
 		}
 	}
@@ -104,6 +105,7 @@ func extractTFDocs(data string) (string, error) {
 	}
 
 	tfDocs := strings.TrimSpace(data[beginIdx:endIdx])
+	log.Printf("Extracted TF Docs:\n%s", tfDocs) // Debugging statement
 	return tfDocs, nil
 }
 
@@ -291,16 +293,32 @@ func (tdv *TerraformDefinitionValidator) Validate() []error {
 		return []error{err}
 	}
 
-	readmeDataSources, err := extractMarkdownSectionItems(tdv.data, "Data Sources")
-	if err != nil {
-		return []error{err}
+	// Since Data Sources are part of Resources, we'll classify them based on the description
+	var readmeDataSources []string
+	for _, res := range readmeResources {
+		if strings.HasSuffix(res.Description, "(data source)") {
+			readmeDataSources = append(readmeDataSources, res.Type)
+		}
+	}
+
+	var readmeResourceTypes []string
+	for _, res := range readmeResources {
+		if strings.HasSuffix(res.Description, "(resource)") {
+			readmeResourceTypes = append(readmeResourceTypes, res.Type)
+		}
 	}
 
 	var errors []error
-	errors = append(errors, compareTerraformAndMarkdown(tfResources, readmeResources, "Resources")...)
+	errors = append(errors, compareTerraformAndMarkdown(tfResources, readmeResourceTypes, "Resources")...)
 	errors = append(errors, compareTerraformAndMarkdown(tfDataSources, readmeDataSources, "Data Sources")...)
 
 	return errors
+}
+
+// ResourceItem represents a resource or data source in the markdown
+type ResourceItem struct {
+	Type        string
+	Description string
 }
 
 // ItemValidator validates items in Terraform and markdown within TF Docs
@@ -364,6 +382,12 @@ func (iv *ItemValidator) Validate() []error {
 	}
 
 	return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
+}
+
+// ResourceItem represents a resource or data source in the markdown
+type ResourceItem struct {
+	Type        string
+	Description string
 }
 
 // Helper functions
@@ -477,12 +501,13 @@ func validateSingleURL(url string) error {
 	return nil
 }
 
-func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
+// extractMarkdownSectionItems extracts items from a specified section in the markdown
+func extractMarkdownSectionItems(data, sectionName string) ([]ResourceItem, error) {
 	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
 	p := parser.NewWithExtensions(extensions)
 	rootNode := markdown.Parse([]byte(data), p)
 
-	var items []string
+	var items []ResourceItem
 	var inTargetSection bool
 
 	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
@@ -512,15 +537,15 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
 	return items, nil
 }
 
-func extractItemsFromList(list *ast.List) []string {
-	var items []string
+func extractItemsFromList(list *ast.List) []ResourceItem {
+	var items []ResourceItem
 	for _, item := range list.Children {
 		if listItem, ok := item.(*ast.ListItem); ok {
 			for _, child := range listItem.GetChildren() {
 				if paragraph, ok := child.(*ast.Paragraph); ok {
 					text := extractTextFromNodes(paragraph.GetChildren())
-					item := extractItemFromText(text)
-					if item != "" {
+					item := extractResourceItemFromText(text)
+					if item.Type != "" {
 						items = append(items, item)
 					}
 					break
@@ -531,24 +556,38 @@ func extractItemsFromList(list *ast.List) []string {
 	return items
 }
 
-func extractItemFromText(text string) string {
-	// Adjusted regex to capture items with or without preceding <a name="..."></a>
-	re := regexp.MustCompile(`<a name="[^"]+"></a>\s*\[([^\]]+)\]|\[([^\]]+)\]`)
+func extractResourceItemFromText(text string) ResourceItem {
+	// Regex to capture [resource.name](url) (type)
+	re := regexp.MustCompile(`\[[^\]]+\]\([^\)]+\)\s*\(([^)]+)\)`)
 	match := re.FindStringSubmatch(text)
-	var item string
-	if len(match) > 1 {
-		if match[1] != "" {
-			item = match[1]
-		} else if len(match) > 2 && match[2] != "" {
-			item = match[2]
-		}
+	if len(match) < 2 {
+		return ResourceItem{}
 	}
-	// Extract the resource type by removing the instance suffix
-	if strings.Contains(item, ".") {
-		parts := strings.SplitN(item, ".", 2)
-		return parts[0]
+	description := strings.TrimSpace(match[1])
+
+	// Extract the resource type from the markdown list item
+	// Example: [azurerm_management_lock.lock](...) (resource)
+	// We need to extract "azurerm_management_lock" for resources and "azurerm_resource_group" for data sources
+
+	// Extract the text inside the first square brackets
+	reType := regexp.MustCompile(`\[(.+?)\]`)
+	typeMatch := reType.FindStringSubmatch(text)
+	if len(typeMatch) < 2 {
+		return ResourceItem{}
 	}
-	return item
+	fullType := typeMatch[1]
+
+	// Extract the resource type by splitting at the first dot
+	parts := strings.SplitN(fullType, ".", 2)
+	if len(parts) < 1 {
+		return ResourceItem{}
+	}
+	resourceType := strings.TrimSpace(parts[0])
+
+	return ResourceItem{
+		Type:        resourceType,
+		Description: description,
+	}
 }
 
 func extractTerraformResources() ([]string, []string, error) {
