@@ -205,22 +205,16 @@ func (s Section) validate(rootNode ast.Node) []error {
 				content := getSectionContent(rootNode, heading)
 
 				// Log the node types within the section
-				for _, n := range content {
-					log.Printf("Section '%s' - Node type: %T", s.Header, n)
+				if len(content) == 0 {
+					log.Printf("Section '%s' - No content found", s.Header)
+				} else {
+					for _, n := range content {
+						log.Printf("Section '%s' - Node type: %T", s.Header, n)
+					}
 				}
 
-				// Check if any list, paragraph, table, or code block nodes exist
-				hasContent := false
-				for _, n := range content {
-					switch n.(type) {
-					case *ast.List, *ast.Paragraph, *ast.Table, *ast.CodeBlock, *ast.BlockQuote:
-						hasContent = true
-						break
-					}
-					if hasContent {
-						break
-					}
-				}
+				// Check if any content exists
+				hasContent := len(content) > 0
 
 				if !hasContent {
 					errors = append(errors, fmt.Errorf("empty section: %s", s.Header))
@@ -912,6 +906,7 @@ func TestMarkdown(t *testing.T) {
 		t.FailNow()
 	}
 }
+
 
 //package main
 
