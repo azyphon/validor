@@ -27,6 +27,7 @@ type Validator interface {
 type MarkdownValidator struct {
 	readmePath string
 	data       string
+	tfDocs     string
 	validators []Validator
 }
 
@@ -47,21 +48,28 @@ func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
 	}
 	data := string(dataBytes)
 
+	tfDocs, err := extractTFDocs(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract TF Docs: %v", err)
+	}
+
 	mv := &MarkdownValidator{
 		readmePath: absReadmePath,
 		data:       data,
+		tfDocs:     tfDocs,
 	}
 
 	// Initialize validators
 	mv.validators = []Validator{
 		NewSectionValidator(data),
+		NewTFDocsSectionValidator(tfDocs),
 		NewFileValidator(absReadmePath),
 		NewURLValidator(data),
-		NewTerraformDefinitionValidator(data),
-		NewItemValidator(data, "Resources", "resource", "Resources", "main.tf"),
-		NewItemValidator(data, "Data Sources", "data", "Data Sources", "main.tf"),
-		NewItemValidator(data, "Inputs", "variable", "Inputs", "variables.tf"),
-		NewItemValidator(data, "Outputs", "output", "Outputs", "outputs.tf"),
+		NewTerraformDefinitionValidator(tfDocs),
+		NewItemValidator(tfDocs, "Resources", "resource", "Resources", "main.tf"),
+		NewItemValidator(tfDocs, "Data Sources", "data", "Data Sources", "main.tf"),
+		NewItemValidator(tfDocs, "Inputs", "variable", "Inputs", "variables.tf"),
+		NewItemValidator(tfDocs, "Outputs", "output", "Outputs", "outputs.tf"),
 	}
 
 	return mv, nil
@@ -79,31 +87,47 @@ func (mv *MarkdownValidator) Validate() []error {
 	return allErrors
 }
 
+// extractTFDocs extracts the content between <!-- BEGIN_TF_DOCS --> and <!-- END_TF_DOCS -->
+func extractTFDocs(data string) (string, error) {
+	beginMarker := "<!-- BEGIN_TF_DOCS -->"
+	endMarker := "<!-- END_TF_DOCS -->"
+
+	beginIdx := strings.Index(data, beginMarker)
+	if beginIdx == -1 {
+		return "", fmt.Errorf("begin marker %s not found", beginMarker)
+	}
+	beginIdx += len(beginMarker)
+
+	endIdx := strings.Index(data, endMarker)
+	if endIdx == -1 {
+		return "", fmt.Errorf("end marker %s not found", endMarker)
+	}
+
+	tfDocs := data[beginIdx:endIdx]
+	return tfDocs, nil
+}
+
 // Section represents a section in the markdown file
 type Section struct {
 	Header string
 }
 
-// SectionValidator validates markdown sections
+// SectionValidator validates markdown sections outside TF Docs
 type SectionValidator struct {
 	data     string
 	sections []Section
 	rootNode ast.Node
 }
 
-// NewSectionValidator creates a new SectionValidator
+// NewSectionValidator creates a new SectionValidator for sections outside TF Docs
 func NewSectionValidator(data string) *SectionValidator {
 	sections := []Section{
 		{Header: "Goals"},
-		{Header: "Resources"},
-		{Header: "Providers"},
-		{Header: "Modules"},
-		{Header: "Requirements"},
-		{Header: "Required Inputs"},
-		{Header: "Optional Inputs"},
-		{Header: "Outputs"},
+		{Header: "Non-Goals"},
 		{Header: "Features"},
 		{Header: "Testing"},
+		{Header: "Notes"},
+		{Header: "Contributing"},
 		{Header: "Authors"},
 		{Header: "License"},
 	}
@@ -119,7 +143,7 @@ func NewSectionValidator(data string) *SectionValidator {
 	}
 }
 
-// Validate validates the sections in the markdown
+// Validate validates the sections outside TF Docs in the markdown
 func (sv *SectionValidator) Validate() []error {
 	var allErrors []error
 	for _, section := range sv.sections {
@@ -156,6 +180,45 @@ func (s Section) validate(rootNode ast.Node) []error {
 	}
 
 	return errors
+}
+
+// TFDocsSectionValidator validates sections within TF Docs
+type TFDocsSectionValidator struct {
+	data     string
+	sections []Section
+	rootNode ast.Node
+}
+
+// NewTFDocsSectionValidator creates a new SectionValidator for sections within TF Docs
+func NewTFDocsSectionValidator(tfDocs string) *TFDocsSectionValidator {
+	sections := []Section{
+		{Header: "Requirements"},
+		{Header: "Providers"},
+		{Header: "Modules"},
+		{Header: "Resources"},
+		{Header: "Required Inputs"},
+		{Header: "Optional Inputs"},
+		{Header: "Outputs"},
+	}
+
+	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+	p := parser.NewWithExtensions(extensions)
+	rootNode := markdown.Parse([]byte(tfDocs), p)
+
+	return &TFDocsSectionValidator{
+		data:     tfDocs,
+		sections: sections,
+		rootNode: rootNode,
+	}
+}
+
+// Validate validates the sections within TF Docs in the markdown
+func (sv *TFDocsSectionValidator) Validate() []error {
+	var allErrors []error
+	for _, section := range sv.sections {
+		allErrors = append(allErrors, section.validate(sv.rootNode)...)
+	}
+	return allErrors
 }
 
 // FileValidator validates the presence of required files
@@ -206,14 +269,14 @@ func (uv *URLValidator) Validate() []error {
 	return validateURLs(uv.data)
 }
 
-// TerraformDefinitionValidator validates Terraform definitions
+// TerraformDefinitionValidator validates Terraform definitions within TF Docs
 type TerraformDefinitionValidator struct {
 	data string
 }
 
 // NewTerraformDefinitionValidator creates a new TerraformDefinitionValidator
-func NewTerraformDefinitionValidator(data string) *TerraformDefinitionValidator {
-	return &TerraformDefinitionValidator{data: data}
+func NewTerraformDefinitionValidator(tfDocs string) *TerraformDefinitionValidator {
+	return &TerraformDefinitionValidator{data: tfDocs}
 }
 
 // Validate compares Terraform resources and data sources with those documented in the markdown
@@ -240,7 +303,7 @@ func (tdv *TerraformDefinitionValidator) Validate() []error {
 	return errors
 }
 
-// ItemValidator validates items in Terraform and markdown
+// ItemValidator validates items in Terraform and markdown within TF Docs
 type ItemValidator struct {
 	data      string
 	itemType  string
@@ -250,9 +313,9 @@ type ItemValidator struct {
 }
 
 // NewItemValidator creates a new ItemValidator
-func NewItemValidator(data, itemType, blockType, section, fileName string) *ItemValidator {
+func NewItemValidator(tfDocs, itemType, blockType, section, fileName string) *ItemValidator {
 	return &ItemValidator{
-		data:      data,
+		data:      tfDocs,
 		itemType:  itemType,
 		blockType: blockType,
 		section:   section,
@@ -727,6 +790,7 @@ func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []e
 	return errors
 }
 
+// TestMarkdown is the main test function
 func TestMarkdown(t *testing.T) {
 	readmePath := "README.md"
 	if envPath := os.Getenv("README_PATH"); envPath != "" {
@@ -746,7 +810,6 @@ func TestMarkdown(t *testing.T) {
 		t.FailNow()
 	}
 }
-
 
 //package main
 
