@@ -281,6 +281,12 @@ func NewTerraformDefinitionValidator(tfDocs string) *TerraformDefinitionValidato
 	return &TerraformDefinitionValidator{data: tfDocs}
 }
 
+// ResourceItem represents a resource or data source in the markdown
+type ResourceItem struct {
+	Type        string
+	Description string
+}
+
 // Validate compares Terraform resources and data sources with those documented in the markdown
 func (tdv *TerraformDefinitionValidator) Validate() []error {
 	tfResources, tfDataSources, err := extractTerraformResources()
@@ -293,32 +299,27 @@ func (tdv *TerraformDefinitionValidator) Validate() []error {
 		return []error{err}
 	}
 
-	// Since Data Sources are part of Resources, we'll classify them based on the description
+	log.Printf("Extracted Resources from Markdown: %+v", readmeResources) // Debugging statement
+
+	// Classify resources and data sources based on description
 	var readmeDataSources []string
+	var readmeResourceTypes []string
 	for _, res := range readmeResources {
-		if strings.HasSuffix(res.Description, "(data source)") {
+		if strings.EqualFold(res.Description, "resource") {
+			readmeResourceTypes = append(readmeResourceTypes, res.Type)
+		} else if strings.EqualFold(res.Description, "data source") {
 			readmeDataSources = append(readmeDataSources, res.Type)
 		}
 	}
 
-	var readmeResourceTypes []string
-	for _, res := range readmeResources {
-		if strings.HasSuffix(res.Description, "(resource)") {
-			readmeResourceTypes = append(readmeResourceTypes, res.Type)
-		}
-	}
+	log.Printf("Classified Resource Types: %+v", readmeResourceTypes)      // Debugging statement
+	log.Printf("Classified Data Sources: %+v", readmeDataSources)        // Debugging statement
 
 	var errors []error
 	errors = append(errors, compareTerraformAndMarkdown(tfResources, readmeResourceTypes, "Resources")...)
 	errors = append(errors, compareTerraformAndMarkdown(tfDataSources, readmeDataSources, "Data Sources")...)
 
 	return errors
-}
-
-// ResourceItem represents a resource or data source in the markdown
-type ResourceItem struct {
-	Type        string
-	Description string
 }
 
 // ItemValidator validates items in Terraform and markdown within TF Docs
@@ -366,10 +367,14 @@ func (iv *ItemValidator) Validate() []error {
 			requiredInputs, err1 := extractMarkdownSectionItems(iv.data, "Required Inputs")
 			optionalInputs, err2 := extractMarkdownSectionItems(iv.data, "Optional Inputs")
 			if err1 == nil {
-				mdItems = append(mdItems, requiredInputs...)
+				for _, item := range requiredInputs {
+					mdItems = append(mdItems, item.Type)
+				}
 			}
 			if err2 == nil {
-				mdItems = append(mdItems, optionalInputs...)
+				for _, item := range optionalInputs {
+					mdItems = append(mdItems, item.Type)
+				}
 			}
 			if len(mdItems) == 0 {
 				return []error{fmt.Errorf("no inputs found in markdown")}
@@ -378,16 +383,12 @@ func (iv *ItemValidator) Validate() []error {
 			return []error{err}
 		}
 	} else {
-		mdItems = items
+		for _, item := range items {
+			mdItems = append(mdItems, item.Type)
+		}
 	}
 
 	return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
-}
-
-// ResourceItem represents a resource or data source in the markdown
-type ResourceItem struct {
-	Type        string
-	Description string
 }
 
 // Helper functions
