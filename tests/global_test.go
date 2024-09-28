@@ -59,7 +59,7 @@ func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
 		NewURLValidator(data),
 		NewTerraformDefinitionValidator(data),
 		NewItemValidator(data, "Resources", "resource", "Resources", "main.tf"),
-		NewItemValidator(data, "Data Sources", "data", "Resources", "main.tf"), // Adjusted to parse from "Resources"
+		NewItemValidator(data, "Data Sources", "data", "Data Sources", "main.tf"),
 		NewItemValidator(data, "Inputs", "variable", "Inputs", "variables.tf"),
 		NewItemValidator(data, "Outputs", "output", "Outputs", "outputs.tf"),
 	}
@@ -228,26 +228,14 @@ func (tdv *TerraformDefinitionValidator) Validate() []error {
 		return []error{err}
 	}
 
-	// Separate resources and data sources from readmeResources based on annotation
-	var readmeOnlyResources []string
-	var readmeOnlyDataSources []string
-
-	for _, item := range readmeResources {
-		if strings.HasSuffix(strings.ToLower(item), "(resource)") {
-			name := strings.TrimSpace(strings.TrimSuffix(item, "(resource)"))
-			readmeOnlyResources = append(readmeOnlyResources, name)
-		} else if strings.HasSuffix(strings.ToLower(item), "(data source)") {
-			name := strings.TrimSpace(strings.TrimSuffix(item, "(data source)"))
-			readmeOnlyDataSources = append(readmeOnlyDataSources, name)
-		} else {
-			// Default to resource if no suffix
-			readmeOnlyResources = append(readmeOnlyResources, item)
-		}
+	readmeDataSources, err := extractMarkdownSectionItems(tdv.data, "Data Sources")
+	if err != nil {
+		return []error{err}
 	}
 
 	var errors []error
-	errors = append(errors, compareTerraformAndMarkdown(tfResources, readmeOnlyResources, "Resources")...)
-	errors = append(errors, compareTerraformAndMarkdown(tfDataSources, readmeOnlyDataSources, "Data Sources")...)
+	errors = append(errors, compareTerraformAndMarkdown(tfResources, readmeResources, "Resources")...)
+	errors = append(errors, compareTerraformAndMarkdown(tfDataSources, readmeDataSources, "Data Sources")...)
 
 	return errors
 }
@@ -447,16 +435,8 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
 		}
 
 		if inTargetSection && entering {
-			switch node := node.(type) {
-			case *ast.List:
-				items = append(items, extractItemsFromList(node)...)
-			case *ast.Heading:
-				// Handle subheadings like ### [name](link)
-				headingText := strings.TrimSpace(extractText(node))
-				name := extractItemFromText(headingText)
-				if name != "" {
-					items = append(items, name)
-				}
+			if list, ok := node.(*ast.List); ok {
+				items = append(items, extractItemsFromList(list)...)
 			}
 		}
 		return ast.GoToNext
@@ -489,13 +469,14 @@ func extractItemsFromList(list *ast.List) []string {
 }
 
 func extractItemFromText(text string) string {
-	re := regexp.MustCompile(`<a name="[^"]+"></a>\s*\[([^\]]+)\]|^\[?([^\]]+)\]?`)
+	// Adjusted regex to capture items with or without preceding <a name="..."></a>
+	re := regexp.MustCompile(`<a name="[^"]+"></a>\s*\[([^\]]+)\]|\[([^\]]+)\]`)
 	match := re.FindStringSubmatch(text)
 	var item string
 	if len(match) > 1 {
 		if match[1] != "" {
 			item = match[1]
-		} else {
+		} else if len(match) > 2 && match[2] != "" {
 			item = match[2]
 		}
 	}
@@ -615,9 +596,6 @@ func extractFromFilePath(filePath string) ([]string, []string, error) {
 			} else if block.Type == "data" {
 				dataSources = append(dataSources, resourceType)
 			}
-		} else {
-			// Handle blocks with incorrect labels
-			return nil, nil, fmt.Errorf("block %s in %s has insufficient labels", block.Type, filepath.Base(filePath))
 		}
 	}
 
@@ -653,12 +631,27 @@ func extractTerraformItems(filePath string, blockType string) ([]string, error) 
 	// Initialize diagnostics variable
 	var diags hcl.Diagnostics
 
+	var schema hcl.BodySchema
+
+	switch blockType {
+	case "resource", "data":
+		schema = hcl.BodySchema{
+			Blocks: []hcl.BlockHeaderSchema{
+				{Type: blockType, LabelNames: []string{"type", "name"}},
+			},
+		}
+	case "variable", "output":
+		schema = hcl.BodySchema{
+			Blocks: []hcl.BlockHeaderSchema{
+				{Type: blockType, LabelNames: []string{"name"}},
+			},
+		}
+	default:
+		return nil, fmt.Errorf("unsupported block type: %s", blockType)
+	}
+
 	// Use PartialContent to extract only the specified block type
-	hclContent, _, contentDiags := body.PartialContent(&hcl.BodySchema{
-		Blocks: []hcl.BlockHeaderSchema{
-			{Type: blockType, LabelNames: []string{"type", "name"}},
-		},
-	})
+	hclContent, _, contentDiags := body.PartialContent(&schema)
 
 	// Append diagnostics
 	diags = append(diags, contentDiags...)
@@ -675,12 +668,18 @@ func extractTerraformItems(filePath string, blockType string) ([]string, error) 
 	}
 
 	for _, block := range hclContent.Blocks {
-		if len(block.Labels) >= 2 {
-			itemName := strings.TrimSpace(block.Labels[1]) // Use the second label (name)
-			items = append(items, itemName)
-		} else {
-			// Handle blocks with incorrect labels
-			return nil, fmt.Errorf("block %s in %s has insufficient labels", block.Type, filepath.Base(filePath))
+		switch blockType {
+		case "resource", "data":
+			if len(block.Labels) >= 2 {
+				// For resource and data, second label is name
+				itemName := strings.TrimSpace(block.Labels[1])
+				items = append(items, itemName)
+			}
+		case "variable", "output":
+			if len(block.Labels) >= 1 {
+				itemName := strings.TrimSpace(block.Labels[0])
+				items = append(items, itemName)
+			}
 		}
 	}
 
@@ -690,7 +689,7 @@ func extractTerraformItems(filePath string, blockType string) ([]string, error) 
 func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
 	var errors []error
 
-	// Normalize case for comparison
+	// Normalize case and create sets
 	tfSet := make(map[string]struct{})
 	for _, item := range tfItems {
 		tfSet[strings.ToLower(item)] = struct{}{}
