@@ -103,7 +103,7 @@ func extractTFDocs(data string) (string, error) {
 		return "", fmt.Errorf("end marker %s not found", endMarker)
 	}
 
-	tfDocs := data[beginIdx:endIdx]
+	tfDocs := strings.TrimSpace(data[beginIdx:endIdx])
 	return tfDocs, nil
 }
 
