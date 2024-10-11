@@ -66,11 +66,30 @@ func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
 }
 
 // Validate runs all registered validators
+//func (mv *MarkdownValidator) Validate() []error {
+    //var allErrors []error
+    //for _, validator := range mv.validators {
+        //allErrors = append(allErrors, validator.Validate()...)
+    //}
+    //return allErrors
+//}
+
 func (mv *MarkdownValidator) Validate() []error {
     var allErrors []error
     for _, validator := range mv.validators {
-        allErrors = append(allErrors, validator.Validate()...)
+        errors := validator.Validate()
+        if len(errors) > 0 {
+            fmt.Printf("Validator %T found errors: %v\n", validator, errors)
+        }
+        allErrors = append(allErrors, errors...)
     }
+
+    if len(allErrors) == 0 {
+        fmt.Println("No validation errors found")
+    } else {
+        fmt.Printf("Total validation errors: %d\n", len(allErrors))
+    }
+
     return allErrors
 }
 
@@ -115,11 +134,28 @@ func NewSectionValidator(data string) *SectionValidator {
 }
 
 // Validate validates the sections in the markdown
+//func (sv *SectionValidator) Validate() []error {
+    //var allErrors []error
+    //for _, section := range sv.sections {
+        //allErrors = append(allErrors, section.validate(sv.rootNode)...)
+    //}
+    //return allErrors
+//}
+
 func (sv *SectionValidator) Validate() []error {
     var allErrors []error
     for _, section := range sv.sections {
-        allErrors = append(allErrors, section.validate(sv.rootNode)...)
+        errors := section.validate(sv.rootNode)
+        if len(errors) > 0 {
+            fmt.Printf("SectionValidator found errors for section: %v\n", section.Headers)
+        }
+        allErrors = append(allErrors, errors...)
     }
+
+    if len(allErrors) == 0 {
+        fmt.Println("SectionValidator found no errors")
+    }
+
     return allErrors
 }
 
