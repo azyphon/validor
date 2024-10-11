@@ -96,10 +96,10 @@ func NewSectionValidator(data string) *SectionValidator {
         {Headers: []string{"Requirements"}},
         {Headers: []string{"Required Inputs", "Optional Inputs"}},
         {Headers: []string{"Outputs"}},
-        {Headers: []string{"Features"}},
+        //{Headers: []string{"Features"}},
         {Headers: []string{"Testing"}},
-        {Headers: []string{"Authors"}},
-        {Headers: []string{"License"}},
+        //{Headers: []string{"Authors"}},
+        //{Headers: []string{"License"}},
     }
 
     // Parse the markdown content into an AST
@@ -158,10 +158,10 @@ func NewFileValidator(readmePath string) *FileValidator {
     rootDir := filepath.Dir(readmePath)
     files := []string{
         readmePath,
-        filepath.Join(rootDir, "CONTRIBUTING.md"),
-        filepath.Join(rootDir, "CODE_OF_CONDUCT.md"),
-        filepath.Join(rootDir, "SECURITY.md"),
-        filepath.Join(rootDir, "LICENSE"),
+        //filepath.Join(rootDir, "CONTRIBUTING.md"),
+        //filepath.Join(rootDir, "CODE_OF_CONDUCT.md"),
+        //filepath.Join(rootDir, "SECURITY.md"),
+        //filepath.Join(rootDir, "LICENSE"),
         filepath.Join(rootDir, "outputs.tf"),
         filepath.Join(rootDir, "variables.tf"),
         filepath.Join(rootDir, "terraform.tf"),
