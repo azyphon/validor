@@ -319,32 +319,35 @@ func (tdv *TerraformDefinitionValidator) Validate() []error {
         return []error{err}
     }
 
-    fmt.Printf("Terraform Resources: %v\n", tfResources)
-
     // Extract resources from Markdown
     readmeResources, readmeDataSources, err := extractReadmeResources(tdv.data)
     if err != nil {
         return []error{err}
     }
 
-    fmt.Printf("Markdown Resources: %v\n", readmeResources)
-
-    // Compare the two sets of resources
+    // Initialize errors
     var errors []error
 
+    // Only raise "resources section not found" error if BOTH Terraform and Markdown resources are empty
     if len(tfResources) == 0 && len(readmeResources) == 0 {
-        // Only raise this error if both Terraform and Markdown have no resources
         errors = append(errors, fmt.Errorf("resources section not found or empty"))
     } else {
-        // Perform comparison and only log real differences
-        errors = append(errors, compareTerraformAndMarkdown(tfResources, readmeResources, "Resources")...)
-        errors = append(errors, compareTerraformAndMarkdown(tfDataSources, readmeDataSources, "Data Sources")...)
+        // Perform comparison if resources are present
+        resourcesErrors := compareTerraformAndMarkdown(tfResources, readmeResources, "Resources")
+        if len(resourcesErrors) == 0 {
+            fmt.Println("Terraform and Markdown resources match, no errors.")
+        } else {
+            errors = append(errors, resourcesErrors...)
+        }
+
+        dataSourcesErrors := compareTerraformAndMarkdown(tfDataSources, readmeDataSources, "Data Sources")
+        errors = append(errors, dataSourcesErrors...)
     }
 
     if len(errors) == 0 {
-        fmt.Println("No errors in TerraformDefinitionValidator")
+        fmt.Println("No validation errors in TerraformDefinitionValidator.")
     } else {
-        fmt.Printf("Errors in TerraformDefinitionValidator: %v\n", errors)
+        fmt.Printf("Errors found in TerraformDefinitionValidator: %v\n", errors)
     }
 
     return errors
