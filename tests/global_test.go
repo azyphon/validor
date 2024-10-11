@@ -397,16 +397,38 @@ func findMissingItems(a, b []string) []string {
 }
 
 // compareTerraformAndMarkdown compares items in Terraform and markdown
+//func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
+    //var errors []error
+
+    //missingInMarkdown := findMissingItems(tfItems, mdItems)
+    //if len(missingInMarkdown) > 0 {
+        //errors = append(errors, formatError("%s missing in markdown:\n  %s", itemType, strings.Join(missingInMarkdown, "\n  ")))
+    //}
+
+    //missingInTerraform := findMissingItems(mdItems, tfItems)
+    //if len(missingInTerraform) > 0 {
+        //errors = append(errors, formatError("%s in markdown but missing in Terraform:\n  %s", itemType, strings.Join(missingInTerraform, "\n  ")))
+    //}
+
+    //return errors
+//}
+
+// compareTerraformAndMarkdown compares items in Terraform and markdown
 func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
     var errors []error
 
+    fmt.Printf("Terraform %s: %v\n", itemType, tfItems)
+    fmt.Printf("Markdown %s: %v\n", itemType, mdItems)
+
     missingInMarkdown := findMissingItems(tfItems, mdItems)
     if len(missingInMarkdown) > 0 {
+        fmt.Printf("Missing in markdown: %v\n", missingInMarkdown)
         errors = append(errors, formatError("%s missing in markdown:\n  %s", itemType, strings.Join(missingInMarkdown, "\n  ")))
     }
 
     missingInTerraform := findMissingItems(mdItems, tfItems)
     if len(missingInTerraform) > 0 {
+        fmt.Printf("Missing in Terraform: %v\n", missingInTerraform)
         errors = append(errors, formatError("%s in markdown but missing in Terraform:\n  %s", itemType, strings.Join(missingInTerraform, "\n  ")))
     }
 
