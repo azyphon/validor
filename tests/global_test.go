@@ -312,23 +312,55 @@ func NewTerraformDefinitionValidator(data string) *TerraformDefinitionValidator 
 }
 
 // Validate compares Terraform resources with those documented in the markdown
+// Validate compares Terraform resources with those documented in the markdown
 func (tdv *TerraformDefinitionValidator) Validate() []error {
+    // Extract resources from Terraform files
     tfResources, tfDataSources, err := extractTerraformResources()
     if err != nil {
         return []error{err}
     }
 
+    fmt.Printf("Terraform Resources: %v\n", tfResources)
+
+    // Extract resources from Markdown
     readmeResources, readmeDataSources, err := extractReadmeResources(tdv.data)
     if err != nil {
         return []error{err}
     }
 
+    fmt.Printf("Markdown Resources: %v\n", readmeResources)
+
+    // Compare the two sets of resources
     var errors []error
     errors = append(errors, compareTerraformAndMarkdown(tfResources, readmeResources, "Resources")...)
     errors = append(errors, compareTerraformAndMarkdown(tfDataSources, readmeDataSources, "Data Sources")...)
 
+    if len(errors) == 0 {
+        fmt.Println("No errors in TerraformDefinitionValidator")
+    } else {
+        fmt.Printf("Errors in TerraformDefinitionValidator: %v\n", errors)
+    }
+
     return errors
 }
+
+//func (tdv *TerraformDefinitionValidator) Validate() []error {
+    //tfResources, tfDataSources, err := extractTerraformResources()
+    //if err != nil {
+        //return []error{err}
+    //}
+
+    //readmeResources, readmeDataSources, err := extractReadmeResources(tdv.data)
+    //if err != nil {
+        //return []error{err}
+    //}
+
+    //var errors []error
+    //errors = append(errors, compareTerraformAndMarkdown(tfResources, readmeResources, "Resources")...)
+    //errors = append(errors, compareTerraformAndMarkdown(tfDataSources, readmeDataSources, "Data Sources")...)
+
+    //return errors
+//}
 
 // ItemValidator validates items in Terraform and markdown
 type ItemValidator struct {
@@ -453,6 +485,7 @@ func findMissingItems(a, b []string) []string {
 func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
     var errors []error
 
+    fmt.Printf("Comparing %s in Terraform and Markdown\n", itemType)
     fmt.Printf("Terraform %s: %v\n", itemType, tfItems)
     fmt.Printf("Markdown %s: %v\n", itemType, mdItems)
 
@@ -470,6 +503,26 @@ func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []e
 
     return errors
 }
+//func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
+    //var errors []error
+
+    //fmt.Printf("Terraform %s: %v\n", itemType, tfItems)
+    //fmt.Printf("Markdown %s: %v\n", itemType, mdItems)
+
+    //missingInMarkdown := findMissingItems(tfItems, mdItems)
+    //if len(missingInMarkdown) > 0 {
+        //fmt.Printf("Missing in markdown: %v\n", missingInMarkdown)
+        //errors = append(errors, formatError("%s missing in markdown:\n  %s", itemType, strings.Join(missingInMarkdown, "\n  ")))
+    //}
+
+    //missingInTerraform := findMissingItems(mdItems, tfItems)
+    //if len(missingInTerraform) > 0 {
+        //fmt.Printf("Missing in Terraform: %v\n", missingInTerraform)
+        //errors = append(errors, formatError("%s in markdown but missing in Terraform:\n  %s", itemType, strings.Join(missingInTerraform, "\n  ")))
+    //}
+
+    //return errors
+//}
 
 // extractTerraformItems extracts item names from a Terraform file given the block type
 func extractTerraformItems(filePath string, blockType string) ([]string, error) {
