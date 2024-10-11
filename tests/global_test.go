@@ -723,16 +723,46 @@ func extractTerraformResources() ([]string, []string, error) {
     }
 
     callerPath := filepath.Join(workspace, "caller")
+    fmt.Printf("Extracting Terraform resources from path: %s\n", callerPath)
+
     allResources, allDataSources, err := extractRecursively(callerPath)
     if err != nil {
         return nil, nil, err
     }
+
+    fmt.Printf("Terraform resources extracted: %v\n", allResources)
+    fmt.Printf("Terraform data sources extracted: %v\n", allDataSources)
 
     resources = append(resources, allResources...)
     dataSources = append(dataSources, allDataSources...)
 
     return resources, dataSources, nil
 }
+
+//func extractTerraformResources() ([]string, []string, error) {
+    //var resources []string
+    //var dataSources []string
+
+    //workspace := os.Getenv("GITHUB_WORKSPACE")
+    //if workspace == "" {
+        //var err error
+        //workspace, err = os.Getwd()
+        //if err != nil {
+            //return nil, nil, fmt.Errorf("failed to get current working directory: %v", err)
+        //}
+    //}
+
+    //callerPath := filepath.Join(workspace, "caller")
+    //allResources, allDataSources, err := extractRecursively(callerPath)
+    //if err != nil {
+        //return nil, nil, err
+    //}
+
+    //resources = append(resources, allResources...)
+    //dataSources = append(dataSources, allDataSources...)
+
+    //return resources, dataSources, nil
+//}
 
 // extractRecursively extracts resources and data sources recursively, skipping specified directories
 func extractRecursively(dirPath string) ([]string, []string, error) {
@@ -780,6 +810,8 @@ func extractRecursively(dirPath string) ([]string, []string, error) {
 
 // extractFromFilePath extracts resources and data sources from a Terraform file
 func extractFromFilePath(filePath string) ([]string, []string, error) {
+    fmt.Printf("Extracting from Terraform file: %s\n", filePath)
+
     content, err := os.ReadFile(filePath)
     if err != nil {
         return nil, nil, fmt.Errorf("error reading file %s: %v", filepath.Base(filePath), err)
@@ -819,14 +851,64 @@ func extractFromFilePath(filePath string) ([]string, []string, error) {
             fullResourceName := resourceType + "." + resourceName
             if block.Type == "resource" {
                 resources = append(resources, fullResourceName)
+                fmt.Printf("Resource found: %s\n", fullResourceName)
             } else if block.Type == "data" {
                 dataSources = append(dataSources, fullResourceName)
+                fmt.Printf("Data source found: %s\n", fullResourceName)
             }
         }
     }
 
     return resources, dataSources, nil
 }
+//func extractFromFilePath(filePath string) ([]string, []string, error) {
+    //content, err := os.ReadFile(filePath)
+    //if err != nil {
+        //return nil, nil, fmt.Errorf("error reading file %s: %v", filepath.Base(filePath), err)
+    //}
+
+    //parser := hclparse.NewParser()
+    //file, parseDiags := parser.ParseHCL(content, filePath)
+    //if parseDiags.HasErrors() {
+        //return nil, nil, fmt.Errorf("error parsing HCL in %s: %v", filepath.Base(filePath), parseDiags)
+    //}
+
+    //var resources []string
+    //var dataSources []string
+    //body := file.Body
+
+    //// Use PartialContent to allow unknown blocks
+    //hclContent, _, diags := body.PartialContent(&hcl.BodySchema{
+        //Blocks: []hcl.BlockHeaderSchema{
+            //{Type: "resource", LabelNames: []string{"type", "name"}},
+            //{Type: "data", LabelNames: []string{"type", "name"}},
+        //},
+    //})
+
+    //if diags.HasErrors() {
+        //return nil, nil, fmt.Errorf("error getting content from %s: %v", filepath.Base(filePath), diags)
+    //}
+
+    //if hclContent == nil {
+        //// No relevant blocks found
+        //return resources, dataSources, nil
+    //}
+
+    //for _, block := range hclContent.Blocks {
+        //if len(block.Labels) >= 2 {
+            //resourceType := strings.TrimSpace(block.Labels[0])
+            //resourceName := strings.TrimSpace(block.Labels[1])
+            //fullResourceName := resourceType + "." + resourceName
+            //if block.Type == "resource" {
+                //resources = append(resources, fullResourceName)
+            //} else if block.Type == "data" {
+                //dataSources = append(dataSources, fullResourceName)
+            //}
+        //}
+    //}
+
+    //return resources, dataSources, nil
+//}
 
 // TestMarkdown runs the markdown validation tests
 func TestMarkdown(t *testing.T) {
