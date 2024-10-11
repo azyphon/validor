@@ -1,7 +1,6 @@
 package main
 
 import (
-    "errors"
     "fmt"
     "net/http"
     "os"
@@ -311,7 +310,6 @@ func NewTerraformDefinitionValidator(data string) *TerraformDefinitionValidator 
     return &TerraformDefinitionValidator{data: data}
 }
 
-// Validate compares Terraform resources with those documented in the markdown
 func (tdv *TerraformDefinitionValidator) Validate() []error {
     // Extract resources from Terraform files
     tfResources, tfDataSources, err := extractTerraformResources()
@@ -319,41 +317,28 @@ func (tdv *TerraformDefinitionValidator) Validate() []error {
         return []error{err}
     }
 
-    // Extract resources from Markdown
+    // Extract resources from the Markdown
     readmeResources, readmeDataSources, err := extractReadmeResources(tdv.data)
     if err != nil {
         return []error{err}
     }
 
-    fmt.Printf("Terraform Resources: %v\n", tfResources)
-    fmt.Printf("Markdown Resources: %v\n", readmeResources)
-
-    var errors []error
-
-    // If both Terraform and Markdown resources are empty, raise the error
+    // If both Terraform and Markdown resources are empty, return an error
     if len(tfResources) == 0 && len(readmeResources) == 0 {
-        fmt.Println("Both Terraform and Markdown resources are empty")
-        errors = append(errors, fmt.Errorf("resources section not found or empty"))
-    } else {
-        // Compare resources only if either Terraform or Markdown resources exist
-        if len(tfResources) > 0 || len(readmeResources) > 0 {
-            fmt.Println("Comparing Terraform and Markdown resources")
-            errors = append(errors, compareTerraformAndMarkdown(tfResources, readmeResources, "Resources")...)
-        }
-
-        // Compare data sources if applicable
-        if len(tfDataSources) > 0 || len(readmeDataSources) > 0 {
-            errors = append(errors, compareTerraformAndMarkdown(tfDataSources, readmeDataSources, "Data Sources")...)
-        }
+        return []error{fmt.Errorf("resources section not found or empty")}
     }
 
-    if len(errors) == 0 {
-        fmt.Println("No validation errors in TerraformDefinitionValidator.")
-    } else {
-        fmt.Printf("Errors found in TerraformDefinitionValidator: %v\n", errors)
-    }
+    var validationErrors []error
 
-    return errors
+    // Compare Terraform and Markdown resources for discrepancies
+    resourceErrors := compareTerraformAndMarkdown(tfResources, readmeResources, "Resources")
+    validationErrors = append(validationErrors, resourceErrors...)
+
+    // Compare Terraform and Markdown data sources for discrepancies (if applicable)
+    dataSourceErrors := compareTerraformAndMarkdown(tfDataSources, readmeDataSources, "Data Sources")
+    validationErrors = append(validationErrors, dataSourceErrors...)
+
+    return validationErrors
 }
 
 
@@ -366,7 +351,7 @@ func (tdv *TerraformDefinitionValidator) Validate() []error {
     //}
 
     //// Extract resources from Markdown
-    //readmeResources, readmeDataSources, err := extractReadmeResources(tdv.data)
+    //readmeResources, readmeDataSources, err := extractReadmeResources(tdv.nn)
     //if err != nil {
         //return []error{err}
     //}
@@ -766,7 +751,6 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
     return items, nil
 }
 
-// extractReadmeResources extracts resources and data sources from the markdown
 func extractReadmeResources(data string) ([]string, []string, error) {
     extensions := parser.CommonExtensions | parser.AutoHeadingIDs
     p := parser.NewWithExtensions(extensions)
@@ -777,24 +761,21 @@ func extractReadmeResources(data string) ([]string, []string, error) {
     var inResourcesSection bool
 
     ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-        // Print each heading we encounter for debugging
+        // Find section headers in the markdown
         if heading, ok := node.(*ast.Heading); ok && entering {
             text := strings.TrimSpace(extractText(heading))
-            fmt.Printf("Heading found: Level=%d, Text=%s\n", heading.Level, text)
             if heading.Level == 2 && strings.EqualFold(text, "Resources") {
-                fmt.Println("Entering Resources section")
                 inResourcesSection = true
             } else if heading.Level == 2 {
                 inResourcesSection = false
             }
         }
 
-        // Check if we're in the "Resources" section and print list items found
+        // Extract resources from the resources section
         if inResourcesSection && entering {
             if listItem, ok := node.(*ast.ListItem); ok {
                 resourceText := extractText(listItem)
-                fmt.Printf("Resource item found: %s\n", resourceText)
-                // Extract resource name and type
+                // Find the name of the resource
                 nameStart := strings.Index(resourceText, "[")
                 nameEnd := strings.Index(resourceText, "]")
                 if nameStart >= 0 && nameEnd > nameStart {
@@ -807,16 +788,67 @@ func extractReadmeResources(data string) ([]string, []string, error) {
                 }
             }
         }
-
         return ast.GoToNext
     })
 
     if len(resources) == 0 && len(dataSources) == 0 {
-        return nil, nil, errors.New("resources section not found or empty")
+        return nil, nil, fmt.Errorf("resources section not found or empty")
     }
 
     return resources, dataSources, nil
 }
+
+// extractReadmeResources extracts resources and data sources from the markdown
+//func extractReadmeResources(data string) ([]string, []string, error) {
+    //extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+    //p := parser.NewWithExtensions(extensions)
+    //rootNode := markdown.Parse([]byte(data), p)
+
+    //var resources []string
+    //var dataSources []string
+    //var inResourcesSection bool
+
+    //ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+        //// Print each heading we encounter for debugging
+        //if heading, ok := node.(*ast.Heading); ok && entering {
+            //text := strings.TrimSpace(extractText(heading))
+            //fmt.Printf("Heading found: Level=%d, Text=%s\n", heading.Level, text)
+            //if heading.Level == 2 && strings.EqualFold(text, "Resources") {
+                //fmt.Println("Entering Resources section")
+                //inResourcesSection = true
+            //} else if heading.Level == 2 {
+                //inResourcesSection = false
+            //}
+        //}
+
+        //// Check if we're in the "Resources" section and print list items found
+        //if inResourcesSection && entering {
+            //if listItem, ok := node.(*ast.ListItem); ok {
+                //resourceText := extractText(listItem)
+                //fmt.Printf("Resource item found: %s\n", resourceText)
+                //// Extract resource name and type
+                //nameStart := strings.Index(resourceText, "[")
+                //nameEnd := strings.Index(resourceText, "]")
+                //if nameStart >= 0 && nameEnd > nameStart {
+                    //resourceName := resourceText[nameStart+1 : nameEnd]
+                    //if strings.Contains(resourceText, "(resource)") {
+                        //resources = append(resources, resourceName)
+                    //} else if strings.Contains(resourceText, "(data source)") {
+                        //dataSources = append(dataSources, resourceName)
+                    //}
+                //}
+            //}
+        //}
+
+        //return ast.GoToNext
+    //})
+
+    //if len(resources) == 0 && len(dataSources) == 0 {
+        //return nil, nil, errors.New("resources section not found or empty")
+    //}
+
+    //return resources, dataSources, nil
+//}
 
 
 // extractReadmeResources extracts resources and data sources from the markdown
@@ -1170,8 +1202,30 @@ func TestMarkdown(t *testing.T) {
         for _, err := range errors {
             t.Errorf("Validation error: %v", err)
         }
+    } else {
+        t.Logf("Validation successful! No errors found.")
     }
 }
+
+
+//func TestMarkdown(t *testing.T) {
+    //readmePath := "README.md"
+    //if envPath := os.Getenv("README_PATH"); envPath != "" {
+        //readmePath = envPath
+    //}
+
+    //validator, err := NewMarkdownValidator(readmePath)
+    //if err != nil {
+        //t.Fatalf("Failed to create validator: %v", err)
+    //}
+
+    //errors := validator.Validate()
+    //if len(errors) > 0 {
+        //for _, err := range errors {
+            //t.Errorf("Validation error: %v", err)
+        //}
+    //}
+//}
 
 //package main
 
