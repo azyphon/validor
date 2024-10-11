@@ -58,9 +58,8 @@ func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
 		NewFileValidator(absReadmePath),
 		NewURLValidator(data),
 		NewTerraformDefinitionValidator(data),
-		NewItemValidator(data, "Variables", "variable", "Required Inputs", "variables.tf"),
-		NewItemValidator(data, "Variables", "variable", "Optional Inputs", "variables.tf"),
-		NewItemValidator(data, "Outputs", "output", "Outputs", "outputs.tf"),
+		NewItemValidator(data, "Variables", "variable", "variables.tf", []string{"Required Inputs", "Optional Inputs"}),
+		NewItemValidator(data, "Outputs", "output", "outputs.tf", []string{"Outputs"}),
 	}
 
 	return mv, nil
@@ -77,7 +76,7 @@ func (mv *MarkdownValidator) Validate() []error {
 
 // Section represents a markdown section
 type Section struct {
-	Header  string
+	Headers []string
 	Columns []string
 }
 
@@ -91,16 +90,16 @@ type SectionValidator struct {
 // NewSectionValidator creates a new SectionValidator
 func NewSectionValidator(data string) *SectionValidator {
 	sections := []Section{
-		{Header: "Goals"},
-		{Header: "Resources"},
-		{Header: "Providers"},
-		{Header: "Requirements"},
-		{Header: "Inputs"},
-		{Header: "Outputs"},
-		{Header: "Features"},
-		{Header: "Testing"},
-		{Header: "Authors"},
-		{Header: "License"},
+		{Headers: []string{"Goals"}},
+		{Headers: []string{"Resources"}},
+		{Headers: []string{"Providers"}},
+		{Headers: []string{"Requirements"}},
+		{Headers: []string{"Required Inputs", "Optional Inputs"}},
+		{Headers: []string{"Outputs"}},
+		{Headers: []string{"Features"}},
+		{Headers: []string{"Testing"}},
+		{Headers: []string{"Authors"}},
+		{Headers: []string{"License"}},
 	}
 
 	// Parse the markdown content into an AST
@@ -133,16 +132,18 @@ func (s Section) validate(rootNode ast.Node) []error {
 	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
 		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
 			text := strings.TrimSpace(extractText(heading))
-			if strings.EqualFold(text, s.Header) || strings.EqualFold(text, s.Header+"s") {
-				found = true
-				return ast.SkipChildren
+			for _, header := range s.Headers {
+				if strings.EqualFold(text, header) {
+					found = true
+					return ast.SkipChildren
+				}
 			}
 		}
 		return ast.GoToNext
 	})
 
 	if !found {
-		errors = append(errors, compareHeaders(s.Header, ""))
+		errors = append(errors, compareHeaders(strings.Join(s.Headers, " or "), ""))
 	}
 
 	return errors
@@ -298,18 +299,18 @@ type ItemValidator struct {
 	data      string
 	itemType  string
 	blockType string
-	section   string
 	fileName  string
+	sections  []string
 }
 
 // NewItemValidator creates a new ItemValidator
-func NewItemValidator(data, itemType, blockType, section, fileName string) *ItemValidator {
+func NewItemValidator(data, itemType, blockType, fileName string, sections []string) *ItemValidator {
 	return &ItemValidator{
 		data:      data,
 		itemType:  itemType,
 		blockType: blockType,
-		section:   section,
 		fileName:  fileName,
+		sections:  sections,
 	}
 }
 
@@ -329,9 +330,17 @@ func (iv *ItemValidator) Validate() []error {
 		return []error{err}
 	}
 
-	mdItems, err := extractMarkdownSectionItems(iv.data, iv.section)
-	if err != nil {
-		return []error{err}
+	var mdItems []string
+	for _, section := range iv.sections {
+		sectionItems, err := extractMarkdownSectionItems(iv.data, section)
+		if err != nil {
+			continue // Ignore the error if section not found
+		}
+		mdItems = append(mdItems, sectionItems...)
+	}
+
+	if len(mdItems) == 0 {
+		return []error{fmt.Errorf("%s sections not found or empty", strings.Join(iv.sections, ", "))}
 	}
 
 	return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
@@ -355,7 +364,7 @@ func formatError(format string, args ...interface{}) error {
 	return fmt.Errorf(format, args...)
 }
 
-// equalSlices checks if two slices are equal
+// equalSlices checks if two slices are equal regardless of order
 func equalSlices(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
@@ -508,35 +517,37 @@ func extractReadmeResources(data string) ([]string, []string, error) {
 			if strings.EqualFold(text, "Resources") {
 				inResourcesSection = true
 				return ast.GoToNext
+			} else {
+				inResourcesSection = false
 			}
-			inResourcesSection = false
 		}
 
 		if inResourcesSection {
-			if listItem, ok := node.(*ast.ListItem); ok && entering {
-				// Extract the resource from the list item
-				resourceText := extractText(listItem)
-				// resourceText will be something like "[azurerm_role_assignment.this](...) (resource)"
-				// We need to extract the resource name and type
-
-				// Extract text inside the square brackets
-				nameStart := strings.Index(resourceText, "[")
-				nameEnd := strings.Index(resourceText, "]")
-				if nameStart >= 0 && nameEnd > nameStart {
-					resourceName := resourceText[nameStart+1 : nameEnd]
-					// Now, find the resource type at the end in parentheses
-					typeStart := strings.LastIndex(resourceText, "(")
-					typeEnd := strings.LastIndex(resourceText, ")")
-					if typeStart >= 0 && typeEnd > typeStart {
-						resourceType := resourceText[typeStart+1 : typeEnd]
-						resourceType = strings.TrimSpace(resourceType)
-						if strings.EqualFold(resourceType, "resource") {
-							resources = append(resources, resourceName)
-						} else if strings.EqualFold(resourceType, "data source") {
-							dataSources = append(dataSources, resourceName)
+			if list, ok := node.(*ast.List); ok && entering {
+				for _, item := range list.GetChildren() {
+					if listItem, ok := item.(*ast.ListItem); ok {
+						resourceText := extractText(listItem)
+						// Extract resource name and type
+						nameStart := strings.Index(resourceText, "[")
+						nameEnd := strings.Index(resourceText, "]")
+						if nameStart >= 0 && nameEnd > nameStart {
+							resourceName := resourceText[nameStart+1 : nameEnd]
+							// Extract resource type
+							typeStart := strings.LastIndex(resourceText, "(")
+							typeEnd := strings.LastIndex(resourceText, ")")
+							if typeStart >= 0 && typeEnd > typeStart {
+								resourceType := resourceText[typeStart+1 : typeEnd]
+								resourceType = strings.TrimSpace(resourceType)
+								if strings.EqualFold(resourceType, "resource") {
+									resources = append(resources, resourceName)
+								} else if strings.EqualFold(resourceType, "data source") {
+									dataSources = append(dataSources, resourceName)
+								}
+							}
 						}
 					}
 				}
+				return ast.SkipChildren
 			}
 		}
 		return ast.GoToNext
@@ -705,7 +716,6 @@ func TestMarkdown(t *testing.T) {
 		}
 	}
 }
-
 
 //package main
 
