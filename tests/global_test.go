@@ -328,17 +328,17 @@ func (tdv *TerraformDefinitionValidator) Validate() []error {
     // Initialize errors
     var errors []error
 
-    // If BOTH Terraform and Markdown have no resources, raise an error
+    // Ensure that error is only raised if BOTH resources and data sources are empty
     if len(tfResources) == 0 && len(readmeResources) == 0 {
-        return []error{fmt.Errorf("resources section not found or empty")}
-    }
-
-    // Compare resources if present
-    if len(tfResources) > 0 || len(readmeResources) > 0 {
+        // Both are empty, so we raise the error
+        errors = append(errors, fmt.Errorf("resources section not found or empty"))
+    } else {
+        // If resources are found in either, perform the comparison
         errors = append(errors, compareTerraformAndMarkdown(tfResources, readmeResources, "Resources")...)
         errors = append(errors, compareTerraformAndMarkdown(tfDataSources, readmeDataSources, "Data Sources")...)
     }
 
+    // Print debug information
     if len(errors) == 0 {
         fmt.Println("No validation errors in TerraformDefinitionValidator.")
     } else {
@@ -347,6 +347,43 @@ func (tdv *TerraformDefinitionValidator) Validate() []error {
 
     return errors
 }
+
+// Validate compares Terraform resources with those documented in the markdown
+//func (tdv *TerraformDefinitionValidator) Validate() []error {
+    //// Extract resources from Terraform files
+    //tfResources, tfDataSources, err := extractTerraformResources()
+    //if err != nil {
+        //return []error{err}
+    //}
+
+    //// Extract resources from Markdown
+    //readmeResources, readmeDataSources, err := extractReadmeResources(tdv.data)
+    //if err != nil {
+        //return []error{err}
+    //}
+
+    //// Initialize errors
+    //var errors []error
+
+    //// If BOTH Terraform and Markdown have no resources, raise an error
+    //if len(tfResources) == 0 && len(readmeResources) == 0 {
+        //return []error{fmt.Errorf("resources section not found or empty")}
+    //}
+
+    //// Compare resources if present
+    //if len(tfResources) > 0 || len(readmeResources) > 0 {
+        //errors = append(errors, compareTerraformAndMarkdown(tfResources, readmeResources, "Resources")...)
+        //errors = append(errors, compareTerraformAndMarkdown(tfDataSources, readmeDataSources, "Data Sources")...)
+    //}
+
+    //if len(errors) == 0 {
+        //fmt.Println("No validation errors in TerraformDefinitionValidator.")
+    //} else {
+        //fmt.Printf("Errors found in TerraformDefinitionValidator: %v\n", errors)
+    //}
+
+    //return errors
+//}
 
 // Validate compares Terraform resources with those documented in the markdown
 //func (tdv *TerraformDefinitionValidator) Validate() []error {
