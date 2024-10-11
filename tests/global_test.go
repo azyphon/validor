@@ -760,8 +760,9 @@ func extractReadmeResources(data string) ([]string, []string, error) {
     var dataSources []string
     var inResourcesSection bool
 
+    // Walk through the markdown AST
     ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-        // Find section headers in the markdown
+        // Check for level-2 headings to identify the "Resources" section
         if heading, ok := node.(*ast.Heading); ok && entering {
             text := strings.TrimSpace(extractText(heading))
             if heading.Level == 2 && strings.EqualFold(text, "Resources") {
@@ -771,11 +772,10 @@ func extractReadmeResources(data string) ([]string, []string, error) {
             }
         }
 
-        // Extract resources from the resources section
+        // If we are in the Resources section, extract list items
         if inResourcesSection && entering {
             if listItem, ok := node.(*ast.ListItem); ok {
                 resourceText := extractText(listItem)
-                // Find the name of the resource
                 nameStart := strings.Index(resourceText, "[")
                 nameEnd := strings.Index(resourceText, "]")
                 if nameStart >= 0 && nameEnd > nameStart {
@@ -788,6 +788,7 @@ func extractReadmeResources(data string) ([]string, []string, error) {
                 }
             }
         }
+
         return ast.GoToNext
     })
 
