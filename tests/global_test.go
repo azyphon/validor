@@ -513,13 +513,13 @@ func extractReadmeResources(data string) ([]string, []string, error) {
 
     ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
         if heading, ok := node.(*ast.Heading); ok && entering {
-            if heading.Level == 2 {
+            if heading.Level <= 2 {
                 text := strings.TrimSpace(extractText(heading))
                 if strings.EqualFold(text, "Resources") {
                     inResourcesSection = true
                 } else {
                     if inResourcesSection {
-                        // We have moved past the Resources section
+                        // We have exited the Resources section
                         inResourcesSection = false
                     }
                 }
@@ -558,6 +558,63 @@ func extractReadmeResources(data string) ([]string, []string, error) {
 
     return resources, dataSources, nil
 }
+
+//func extractReadmeResources(data string) ([]string, []string, error) {
+    //extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+    //p := parser.NewWithExtensions(extensions)
+    //rootNode := markdown.Parse([]byte(data), p)
+
+    //var resources []string
+    //var dataSources []string
+    //var inResourcesSection bool
+
+    //ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+        //if heading, ok := node.(*ast.Heading); ok && entering {
+            //if heading.Level == 2 {
+                //text := strings.TrimSpace(extractText(heading))
+                //if strings.EqualFold(text, "Resources") {
+                    //inResourcesSection = true
+                //} else {
+                    //if inResourcesSection {
+                        //// We have moved past the Resources section
+                        //inResourcesSection = false
+                    //}
+                //}
+            //}
+        //}
+
+        //if inResourcesSection && entering {
+            //if listItem, ok := node.(*ast.ListItem); ok {
+                //resourceText := extractText(listItem)
+                //// Extract resource name and type
+                //nameStart := strings.Index(resourceText, "[")
+                //nameEnd := strings.Index(resourceText, "]")
+                //if nameStart >= 0 && nameEnd > nameStart {
+                    //resourceName := resourceText[nameStart+1 : nameEnd]
+                    //// Extract resource type
+                    //typeStart := strings.LastIndex(resourceText, "(")
+                    //typeEnd := strings.LastIndex(resourceText, ")")
+                    //if typeStart >= 0 && typeEnd > typeStart {
+                        //resourceType := resourceText[typeStart+1 : typeEnd]
+                        //resourceType = strings.TrimSpace(resourceType)
+                        //if strings.EqualFold(resourceType, "resource") {
+                            //resources = append(resources, resourceName)
+                        //} else if strings.EqualFold(resourceType, "data source") {
+                            //dataSources = append(dataSources, resourceName)
+                        //}
+                    //}
+                //}
+            //}
+        //}
+        //return ast.GoToNext
+    //})
+
+    //if len(resources) == 0 && len(dataSources) == 0 {
+        //return nil, nil, errors.New("resources section not found or empty")
+    //}
+
+    //return resources, dataSources, nil
+//}
 
 // extractText extracts text from a node, including code spans
 func extractText(node ast.Node) string {
