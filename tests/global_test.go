@@ -512,29 +512,28 @@ func extractReadmeResources(data string) ([]string, []string, error) {
     var inResourcesSection bool
 
     ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+        // Print each heading we encounter for debugging
         if heading, ok := node.(*ast.Heading); ok && entering {
-            // Check if we are entering the "Resources" section
             text := strings.TrimSpace(extractText(heading))
+            fmt.Printf("Heading found: Level=%d, Text=%s\n", heading.Level, text)
             if heading.Level == 2 && strings.EqualFold(text, "Resources") {
+                fmt.Println("Entering Resources section")
                 inResourcesSection = true
-                return ast.GoToNext
-            }
-            // Exit the resources section if we find a different heading
-            if heading.Level <= 2 && inResourcesSection {
+            } else if heading.Level == 2 {
                 inResourcesSection = false
             }
         }
 
+        // Check if we're in the "Resources" section and print list items found
         if inResourcesSection && entering {
-            // Extract list items within the "Resources" section
             if listItem, ok := node.(*ast.ListItem); ok {
                 resourceText := extractText(listItem)
+                fmt.Printf("Resource item found: %s\n", resourceText)
                 // Extract resource name and type
                 nameStart := strings.Index(resourceText, "[")
                 nameEnd := strings.Index(resourceText, "]")
                 if nameStart >= 0 && nameEnd > nameStart {
                     resourceName := resourceText[nameStart+1 : nameEnd]
-                    // Check if the item is a resource or data source
                     if strings.Contains(resourceText, "(resource)") {
                         resources = append(resources, resourceName)
                     } else if strings.Contains(resourceText, "(data source)") {
@@ -543,6 +542,7 @@ func extractReadmeResources(data string) ([]string, []string, error) {
                 }
             }
         }
+
         return ast.GoToNext
     })
 
