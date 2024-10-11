@@ -328,20 +328,15 @@ func (tdv *TerraformDefinitionValidator) Validate() []error {
     // Initialize errors
     var errors []error
 
-    // Only raise "resources section not found" error if BOTH Terraform and Markdown resources are empty
+    // If BOTH Terraform and Markdown have no resources, raise an error
     if len(tfResources) == 0 && len(readmeResources) == 0 {
-        errors = append(errors, fmt.Errorf("resources section not found or empty"))
-    } else {
-        // Perform comparison if resources are present
-        resourcesErrors := compareTerraformAndMarkdown(tfResources, readmeResources, "Resources")
-        if len(resourcesErrors) == 0 {
-            fmt.Println("Terraform and Markdown resources match, no errors.")
-        } else {
-            errors = append(errors, resourcesErrors...)
-        }
+        return []error{fmt.Errorf("resources section not found or empty")}
+    }
 
-        dataSourcesErrors := compareTerraformAndMarkdown(tfDataSources, readmeDataSources, "Data Sources")
-        errors = append(errors, dataSourcesErrors...)
+    // Compare resources if present
+    if len(tfResources) > 0 || len(readmeResources) > 0 {
+        errors = append(errors, compareTerraformAndMarkdown(tfResources, readmeResources, "Resources")...)
+        errors = append(errors, compareTerraformAndMarkdown(tfDataSources, readmeDataSources, "Data Sources")...)
     }
 
     if len(errors) == 0 {
@@ -352,6 +347,48 @@ func (tdv *TerraformDefinitionValidator) Validate() []error {
 
     return errors
 }
+
+// Validate compares Terraform resources with those documented in the markdown
+//func (tdv *TerraformDefinitionValidator) Validate() []error {
+    //// Extract resources from Terraform files
+    //tfResources, tfDataSources, err := extractTerraformResources()
+    //if err != nil {
+        //return []error{err}
+    //}
+
+    //// Extract resources from Markdown
+    //readmeResources, readmeDataSources, err := extractReadmeResources(tdv.data)
+    //if err != nil {
+        //return []error{err}
+    //}
+
+    //// Initialize errors
+    //var errors []error
+
+    //// Only raise "resources section not found" error if BOTH Terraform and Markdown resources are empty
+    //if len(tfResources) == 0 && len(readmeResources) == 0 {
+        //errors = append(errors, fmt.Errorf("resources section not found or empty"))
+    //} else {
+        //// Perform comparison if resources are present
+        //resourcesErrors := compareTerraformAndMarkdown(tfResources, readmeResources, "Resources")
+        //if len(resourcesErrors) == 0 {
+            //fmt.Println("Terraform and Markdown resources match, no errors.")
+        //} else {
+            //errors = append(errors, resourcesErrors...)
+        //}
+
+        //dataSourcesErrors := compareTerraformAndMarkdown(tfDataSources, readmeDataSources, "Data Sources")
+        //errors = append(errors, dataSourcesErrors...)
+    //}
+
+    //if len(errors) == 0 {
+        //fmt.Println("No validation errors in TerraformDefinitionValidator.")
+    //} else {
+        //fmt.Printf("Errors found in TerraformDefinitionValidator: %v\n", errors)
+    //}
+
+    //return errors
+//}
 
 // Validate compares Terraform resources with those documented in the markdown
 // Validate compares Terraform resources with those documented in the markdown
@@ -527,24 +564,53 @@ func findMissingItems(a, b []string) []string {
 func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
     var errors []error
 
-    fmt.Printf("Comparing %s in Terraform and Markdown\n", itemType)
+    fmt.Printf("Comparing %s between Terraform and Markdown\n", itemType)
     fmt.Printf("Terraform %s: %v\n", itemType, tfItems)
     fmt.Printf("Markdown %s: %v\n", itemType, mdItems)
 
+    // Check for missing resources in Markdown
     missingInMarkdown := findMissingItems(tfItems, mdItems)
     if len(missingInMarkdown) > 0 {
         fmt.Printf("Missing in markdown: %v\n", missingInMarkdown)
         errors = append(errors, formatError("%s missing in markdown:\n  %s", itemType, strings.Join(missingInMarkdown, "\n  ")))
+    } else {
+        fmt.Println("No resources missing in Markdown")
     }
 
+    // Check for missing resources in Terraform
     missingInTerraform := findMissingItems(mdItems, tfItems)
     if len(missingInTerraform) > 0 {
         fmt.Printf("Missing in Terraform: %v\n", missingInTerraform)
         errors = append(errors, formatError("%s in markdown but missing in Terraform:\n  %s", itemType, strings.Join(missingInTerraform, "\n  ")))
+    } else {
+        fmt.Println("No resources missing in Terraform")
     }
 
     return errors
 }
+
+// compareTerraformAndMarkdown compares items in Terraform and markdown
+//func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
+    //var errors []error
+
+    //fmt.Printf("Comparing %s in Terraform and Markdown\n", itemType)
+    //fmt.Printf("Terraform %s: %v\n", itemType, tfItems)
+    //fmt.Printf("Markdown %s: %v\n", itemType, mdItems)
+
+    //missingInMarkdown := findMissingItems(tfItems, mdItems)
+    //if len(missingInMarkdown) > 0 {
+        //fmt.Printf("Missing in markdown: %v\n", missingInMarkdown)
+        //errors = append(errors, formatError("%s missing in markdown:\n  %s", itemType, strings.Join(missingInMarkdown, "\n  ")))
+    //}
+
+    //missingInTerraform := findMissingItems(mdItems, tfItems)
+    //if len(missingInTerraform) > 0 {
+        //fmt.Printf("Missing in Terraform: %v\n", missingInTerraform)
+        //errors = append(errors, formatError("%s in markdown but missing in Terraform:\n  %s", itemType, strings.Join(missingInTerraform, "\n  ")))
+    //}
+
+    //return errors
+//}
 //func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
     //var errors []error
 
