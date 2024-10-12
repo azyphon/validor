@@ -92,7 +92,7 @@ func extractReadmeResources(data string) ([]string, []string, error) {
 	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
 		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
 			text := strings.TrimSpace(extractText(heading))
-			if strings.EqualFold(text, "Resources") {
+			if strings.EqualFold(text, "Resources") || strings.EqualFold(text, "Resource") {
 				inResourcesSection = true
 				return ast.GoToNext
 			}
@@ -100,19 +100,35 @@ func extractReadmeResources(data string) ([]string, []string, error) {
 		}
 
 		if inResourcesSection {
-			if paragraph, ok := node.(*ast.Paragraph); ok {
-				// Resources are listed in plain text form (e.g., "azurerm_kubernetes_cluster")
-				resourceText := extractText(paragraph)
-				entries := strings.Split(resourceText, "\n")
-				for _, entry := range entries {
-					if strings.Contains(entry, "resource") {
-						resources = append(resources, entry)
-					} else if strings.Contains(entry, "data source") {
-						dataSources = append(dataSources, entry)
+			switch n := node.(type) {
+			case *ast.Paragraph:
+				// Resources listed in paragraph form
+				resourceText := extractText(n)
+				if resourceText != "" {
+					resources = append(resources, strings.TrimSpace(resourceText))
+				}
+			case *ast.Table:
+				// Resources listed in a table
+				for _, child := range n.GetChildren() {
+					if body, ok := child.(*ast.TableBody); ok {
+						for _, row := range body.GetChildren() {
+							if tableRow, ok := row.(*ast.TableRow); ok {
+								for _, cell := range tableRow.GetChildren() {
+									if tableCell, ok := cell.(*ast.TableCell); ok {
+										item := extractTextFromNodes(tableCell.GetChildren())
+										if strings.Contains(item, "resource") {
+											resources = append(resources, strings.TrimSpace(item))
+										} else if strings.Contains(item, "data source") {
+											dataSources = append(dataSources, strings.TrimSpace(item))
+										}
+									}
+								}
+							}
+						}
 					}
 				}
-				return ast.SkipChildren
 			}
+			return ast.SkipChildren
 		}
 		return ast.GoToNext
 	})
@@ -648,6 +664,77 @@ func TestMarkdown(t *testing.T) {
 	}
 }
 
+// extractMarkdownSectionItems extracts items from a markdown section (like Inputs or Outputs)
+func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
+	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+	p := parser.NewWithExtensions(extensions)
+	rootNode := markdown.Parse([]byte(data), p)
+
+	var items []string
+	var inTargetSection bool
+
+	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
+			text := strings.TrimSpace(extractText(heading))
+			if strings.EqualFold(text, sectionName) || strings.EqualFold(text, sectionName+"s") {
+				inTargetSection = true
+				return ast.GoToNext
+			}
+			inTargetSection = false
+		}
+
+		if inTargetSection {
+			switch n := node.(type) {
+			case *ast.Paragraph:
+				item := extractText(n)
+				if item != "" {
+					items = append(items, strings.TrimSpace(item))
+				}
+			case *ast.Table:
+				// Extract table content, which might list the inputs/outputs
+				for _, child := range n.GetChildren() {
+					if body, ok := child.(*ast.TableBody); ok {
+						for _, row := range body.GetChildren() {
+							if tableRow, ok := row.(*ast.TableRow); ok {
+								for _, cell := range tableRow.GetChildren() {
+									if tableCell, ok := cell.(*ast.TableCell); ok {
+										item := extractTextFromNodes(tableCell.GetChildren())
+										items = append(items, strings.TrimSpace(item))
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			return ast.SkipChildren
+		}
+		return ast.GoToNext
+	})
+
+	if len(items) == 0 {
+		return nil, fmt.Errorf("%s section not found or empty", sectionName)
+	}
+
+	return items, nil
+}
+
+// findMissingItems finds items in a that are not in b, ensuring no duplicates are counted
+func findMissingItems(a, b []string) []string {
+	bSet := make(map[string]struct{}, len(b))
+	for _, x := range b {
+		bSet[x] = struct{}{}
+	}
+	var missing []string
+	seen := make(map[string]bool)
+	for _, x := range a {
+		if _, found := bSet[x]; !found && !seen[x] {
+			missing = append(missing, x)
+			seen[x] = true // Mark as seen to avoid counting duplicates
+		}
+	}
+	return missing
+}
 
 // normalizeResourceName strips symbolic names like ".this" from resource names for comparison
 func normalizeResourceName(resourceName string) string {
@@ -684,59 +771,6 @@ func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []e
 	}
 
 	return errors
-}
-
-// extractMarkdownSectionItems extracts items from a markdown section (like Inputs or Outputs)
-func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
-	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-	p := parser.NewWithExtensions(extensions)
-	rootNode := markdown.Parse([]byte(data), p)
-
-	var items []string
-	var inTargetSection bool
-
-	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
-			text := strings.TrimSpace(extractText(heading))
-			if strings.EqualFold(text, sectionName) || strings.EqualFold(text, sectionName+"s") {
-				inTargetSection = true
-				return ast.GoToNext
-			}
-			inTargetSection = false
-		}
-
-		if inTargetSection {
-			if paragraph, ok := node.(*ast.Paragraph); ok && entering {
-				item := extractText(paragraph)
-				items = append(items, strings.TrimSpace(item))
-				return ast.SkipChildren
-			}
-		}
-		return ast.GoToNext
-	})
-
-	if len(items) == 0 {
-		return nil, fmt.Errorf("%s section not found or empty", sectionName)
-	}
-
-	return items, nil
-}
-
-// findMissingItems finds items in a that are not in b, ensuring no duplicates are counted
-func findMissingItems(a, b []string) []string {
-	bSet := make(map[string]struct{}, len(b))
-	for _, x := range b {
-		bSet[x] = struct{}{}
-	}
-	var missing []string
-	seen := make(map[string]bool)
-	for _, x := range a {
-		if _, found := bSet[x]; !found && !seen[x] {
-			missing = append(missing, x)
-			seen[x] = true // Mark as seen to avoid counting duplicates
-		}
-	}
-	return missing
 }
 
 //package main
