@@ -670,8 +670,7 @@ func extractOutputsFromMarkdown(data string) ([]string, error) {
 	return extractMarkdownSectionItems(data, "Outputs")
 }
 
-
-// extractMarkdownSectionItems extracts items from a markdown section in plain text form.
+// extractMarkdownSectionItems extracts plain text items from a markdown section like Inputs.
 func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
 	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
 	p := parser.NewWithExtensions(extensions)
@@ -684,6 +683,7 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
 	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
 		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
 			text := strings.TrimSpace(extractText(heading))
+			// Check for the target section by name (Inputs, Outputs, Resources, etc.)
 			if strings.EqualFold(text, sectionName) || strings.EqualFold(text, sectionName+"s") {
 				inTargetSection = true
 				return ast.GoToNext
@@ -694,12 +694,12 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
 		// When inside the target section, extract plain text items
 		if inTargetSection {
 			if paragraph, ok := node.(*ast.Paragraph); ok && entering {
-				// Split the paragraph text into individual lines (assuming each input/output is on a new line)
+				// Split paragraph text into individual lines
 				paragraphText := strings.Split(extractText(paragraph), "\n")
 				for _, item := range paragraphText {
 					item = strings.TrimSpace(item)
 					if item != "" {
-						items = append(items, item)
+						items = append(items, item) // Add each item
 					}
 				}
 				return ast.SkipChildren
@@ -715,20 +715,20 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
 	return items, nil
 }
 
-// normalizeResourceName strips symbolic names like ".this" from resource names for comparison.
+// normalizeResourceName removes symbolic names like ".this" for comparison.
 func normalizeResourceName(resourceName string) string {
-	// Strip anything after the first dot to normalize the resource name
+	// Remove anything after the first dot to normalize the resource name
 	if dotIndex := strings.Index(resourceName, "."); dotIndex != -1 {
 		return resourceName[:dotIndex]
 	}
 	return resourceName
 }
 
-// compareTerraformAndMarkdown compares resources in Terraform and markdown, ensuring name normalization.
+// compareTerraformAndMarkdown compares resources listed in Terraform and markdown.
 func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
 	var errors []error
 
-	// Normalize both Terraform and Markdown items
+	// Normalize Terraform and Markdown items
 	normalizedTFItems := make([]string, len(tfItems))
 	for i, item := range tfItems {
 		normalizedTFItems[i] = normalizeResourceName(item)
@@ -739,11 +739,13 @@ func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []e
 		normalizedMDItems[i] = normalizeResourceName(item)
 	}
 
+	// Find missing items in markdown
 	missingInMarkdown := findMissingItems(normalizedTFItems, normalizedMDItems)
 	if len(missingInMarkdown) > 0 {
 		errors = append(errors, formatError("%s missing in markdown:\n  %s", itemType, strings.Join(missingInMarkdown, "\n  ")))
 	}
 
+	// Find missing items in Terraform
 	missingInTerraform := findMissingItems(normalizedMDItems, normalizedTFItems)
 	if len(missingInTerraform) > 0 {
 		errors = append(errors, formatError("%s in markdown but missing in Terraform:\n  %s", itemType, strings.Join(missingInTerraform, "\n  ")))
@@ -752,6 +754,11 @@ func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []e
 	return errors
 }
 
+// extractMarkdownSectionItemsForOutputs extracts plain text items from the Outputs section.
+func extractMarkdownSectionItemsForOutputs(data, sectionName string) ([]string, error) {
+	// Reuse the same logic as for Inputs
+	return extractMarkdownSectionItems(data, sectionName)
+}
 
 //package main
 
