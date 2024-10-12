@@ -79,67 +79,6 @@ type Section struct {
 	Content []string // Expected content or keywords in the section
 }
 
-// extractReadmeResources extracts resources and data sources from the markdown
-func extractReadmeResources(data string) ([]string, []string, error) {
-	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-	p := parser.NewWithExtensions(extensions)
-	rootNode := markdown.Parse([]byte(data), p)
-
-	var resources []string
-	var dataSources []string
-	var inResourcesSection bool
-
-	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
-			text := strings.TrimSpace(extractText(heading))
-			if strings.EqualFold(text, "Resources") || strings.EqualFold(text, "Resource") {
-				inResourcesSection = true
-				return ast.GoToNext
-			}
-			inResourcesSection = false
-		}
-
-		if inResourcesSection {
-			switch n := node.(type) {
-			case *ast.Paragraph:
-				// Resources listed in paragraph form
-				resourceText := extractText(n)
-				if resourceText != "" {
-					resources = append(resources, strings.TrimSpace(resourceText))
-				}
-			case *ast.Table:
-				// Resources listed in a table
-				for _, child := range n.GetChildren() {
-					if body, ok := child.(*ast.TableBody); ok {
-						for _, row := range body.GetChildren() {
-							if tableRow, ok := row.(*ast.TableRow); ok {
-								for _, cell := range tableRow.GetChildren() {
-									if tableCell, ok := cell.(*ast.TableCell); ok {
-										item := extractTextFromNodes(tableCell.GetChildren())
-										if strings.Contains(item, "resource") {
-											resources = append(resources, strings.TrimSpace(item))
-										} else if strings.Contains(item, "data source") {
-											dataSources = append(dataSources, strings.TrimSpace(item))
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-			return ast.SkipChildren
-		}
-		return ast.GoToNext
-	})
-
-	if len(resources) == 0 && len(dataSources) == 0 {
-		return nil, nil, fmt.Errorf("resources section not found or empty")
-	}
-
-	return resources, dataSources, nil
-}
-
 // extractTerraformItems extracts items (variables, outputs, etc.) from a Terraform file
 func extractTerraformItems(filePath string, blockType string) ([]string, error) {
 	content, err := os.ReadFile(filePath)
@@ -664,7 +603,24 @@ func TestMarkdown(t *testing.T) {
 	}
 }
 
-// extractMarkdownSectionItems extracts items from a markdown section (like Inputs or Outputs)
+// findMissingItems finds items in a that are not in b, ensuring no duplicates are counted
+func findMissingItems(a, b []string) []string {
+	bSet := make(map[string]struct{}, len(b))
+	for _, x := range b {
+		bSet[x] = struct{}{}
+	}
+	var missing []string
+	seen := make(map[string]bool)
+	for _, x := range a {
+		if _, found := bSet[x]; !found && !seen[x] {
+			missing = append(missing, x)
+			seen[x] = true // Mark as seen to avoid counting duplicates
+		}
+	}
+	return missing
+}
+
+// extractMarkdownSectionItems extracts items from a markdown section presented as plain text.
 func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
 	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
 	p := parser.NewWithExtensions(extensions)
@@ -684,30 +640,17 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
 		}
 
 		if inTargetSection {
-			switch n := node.(type) {
-			case *ast.Paragraph:
-				item := extractText(n)
-				if item != "" {
-					items = append(items, strings.TrimSpace(item))
-				}
-			case *ast.Table:
-				// Extract table content, which might list the inputs/outputs
-				for _, child := range n.GetChildren() {
-					if body, ok := child.(*ast.TableBody); ok {
-						for _, row := range body.GetChildren() {
-							if tableRow, ok := row.(*ast.TableRow); ok {
-								for _, cell := range tableRow.GetChildren() {
-									if tableCell, ok := cell.(*ast.TableCell); ok {
-										item := extractTextFromNodes(tableCell.GetChildren())
-										items = append(items, strings.TrimSpace(item))
-									}
-								}
-							}
-						}
+			if paragraph, ok := node.(*ast.Paragraph); ok && entering {
+				// Extract paragraph text as individual items (assuming each item is on a new line)
+				paragraphText := strings.Split(extractText(paragraph), "\n")
+				for _, item := range paragraphText {
+					item = strings.TrimSpace(item)
+					if item != "" {
+						items = append(items, item)
 					}
 				}
+				return ast.SkipChildren
 			}
-			return ast.SkipChildren
 		}
 		return ast.GoToNext
 	})
@@ -717,23 +660,6 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
 	}
 
 	return items, nil
-}
-
-// findMissingItems finds items in a that are not in b, ensuring no duplicates are counted
-func findMissingItems(a, b []string) []string {
-	bSet := make(map[string]struct{}, len(b))
-	for _, x := range b {
-		bSet[x] = struct{}{}
-	}
-	var missing []string
-	seen := make(map[string]bool)
-	for _, x := range a {
-		if _, found := bSet[x]; !found && !seen[x] {
-			missing = append(missing, x)
-			seen[x] = true // Mark as seen to avoid counting duplicates
-		}
-	}
-	return missing
 }
 
 // normalizeResourceName strips symbolic names like ".this" from resource names for comparison
@@ -772,6 +698,52 @@ func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []e
 
 	return errors
 }
+
+// extractReadmeResources extracts resources and data sources from the markdown, assuming plain text.
+func extractReadmeResources(data string) ([]string, []string, error) {
+	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+	p := parser.NewWithExtensions(extensions)
+	rootNode := markdown.Parse([]byte(data), p)
+
+	var resources []string
+	var dataSources []string
+	var inResourcesSection bool
+
+	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
+			text := strings.TrimSpace(extractText(heading))
+			if strings.EqualFold(text, "Resources") || strings.EqualFold(text, "Resource") {
+				inResourcesSection = true
+				return ast.GoToNext
+			}
+			inResourcesSection = false
+		}
+
+		if inResourcesSection {
+			if paragraph, ok := node.(*ast.Paragraph); ok && entering {
+				// Assume each resource is listed as plain text in the paragraph
+				paragraphText := strings.Split(extractText(paragraph), "\n")
+				for _, item := range paragraphText {
+					item = strings.TrimSpace(item)
+					if strings.Contains(item, "resource") {
+						resources = append(resources, item)
+					} else if strings.Contains(item, "data source") {
+						dataSources = append(dataSources, item)
+					}
+				}
+				return ast.SkipChildren
+			}
+		}
+		return ast.GoToNext
+	})
+
+	if len(resources) == 0 && len(dataSources) == 0 {
+		return nil, nil, fmt.Errorf("resources section not found or empty")
+	}
+
+	return resources, dataSources, nil
+}
+
 
 //package main
 
