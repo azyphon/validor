@@ -511,74 +511,6 @@ func formatError(format string, args ...interface{}) error {
 	return fmt.Errorf(format, args...)
 }
 
-// compareTerraformAndMarkdown compares items in Terraform and markdown
-func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
-	var errors []error
-
-	missingInMarkdown := findMissingItems(tfItems, mdItems)
-	if len(missingInMarkdown) > 0 {
-		errors = append(errors, formatError("%s missing in markdown:\n  %s", itemType, strings.Join(missingInMarkdown, "\n  ")))
-	}
-
-	missingInTerraform := findMissingItems(mdItems, tfItems)
-	if len(missingInTerraform) > 0 {
-		errors = append(errors, formatError("%s in markdown but missing in Terraform:\n  %s", itemType, strings.Join(missingInTerraform, "\n  ")))
-	}
-
-	return errors
-}
-
-// findMissingItems finds items in a that are not in b
-func findMissingItems(a, b []string) []string {
-	bSet := make(map[string]struct{}, len(b))
-	for _, x := range b {
-		bSet[x] = struct{}{}
-	}
-	var missing []string
-	for _, x := range a {
-		if _, found := bSet[x]; !found {
-			missing = append(missing, x)
-		}
-	}
-	return missing
-}
-
-// extractMarkdownSectionItems extracts items from a markdown section
-func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
-	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-	p := parser.NewWithExtensions(extensions)
-	rootNode := markdown.Parse([]byte(data), p)
-
-	var items []string
-	var inTargetSection bool
-
-	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
-			text := strings.TrimSpace(extractText(heading))
-			if strings.EqualFold(text, sectionName) || strings.EqualFold(text, sectionName+"s") {
-				inTargetSection = true
-				return ast.GoToNext
-			}
-			inTargetSection = false
-		}
-
-		if inTargetSection {
-			if paragraph, ok := node.(*ast.Paragraph); ok && entering {
-				item := extractText(paragraph)
-				items = append(items, strings.TrimSpace(item))
-				return ast.SkipChildren
-			}
-		}
-		return ast.GoToNext
-	})
-
-	if len(items) == 0 {
-		return nil, fmt.Errorf("%s section not found or empty", sectionName)
-	}
-
-	return items, nil
-}
-
 // extractTerraformResources extracts resources and data sources from Terraform files
 func extractTerraformResources() ([]string, []string, error) {
 	var resources []string
@@ -716,6 +648,96 @@ func TestMarkdown(t *testing.T) {
 	}
 }
 
+
+// normalizeResourceName strips symbolic names like ".this" from resource names for comparison
+func normalizeResourceName(resourceName string) string {
+	// Strip anything after the first dot
+	if dotIndex := strings.Index(resourceName, "."); dotIndex != -1 {
+		return resourceName[:dotIndex]
+	}
+	return resourceName
+}
+
+// compareTerraformAndMarkdown compares resources in Terraform and markdown, with name normalization
+func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
+	var errors []error
+
+	// Normalize both Terraform and Markdown items
+	normalizedTFItems := make([]string, len(tfItems))
+	for i, item := range tfItems {
+		normalizedTFItems[i] = normalizeResourceName(item)
+	}
+
+	normalizedMDItems := make([]string, len(mdItems))
+	for i, item := range mdItems {
+		normalizedMDItems[i] = normalizeResourceName(item)
+	}
+
+	missingInMarkdown := findMissingItems(normalizedTFItems, normalizedMDItems)
+	if len(missingInMarkdown) > 0 {
+		errors = append(errors, formatError("%s missing in markdown:\n  %s", itemType, strings.Join(missingInMarkdown, "\n  ")))
+	}
+
+	missingInTerraform := findMissingItems(normalizedMDItems, normalizedTFItems)
+	if len(missingInTerraform) > 0 {
+		errors = append(errors, formatError("%s in markdown but missing in Terraform:\n  %s", itemType, strings.Join(missingInTerraform, "\n  ")))
+	}
+
+	return errors
+}
+
+// extractMarkdownSectionItems extracts items from a markdown section (like Inputs or Outputs)
+func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
+	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+	p := parser.NewWithExtensions(extensions)
+	rootNode := markdown.Parse([]byte(data), p)
+
+	var items []string
+	var inTargetSection bool
+
+	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
+			text := strings.TrimSpace(extractText(heading))
+			if strings.EqualFold(text, sectionName) || strings.EqualFold(text, sectionName+"s") {
+				inTargetSection = true
+				return ast.GoToNext
+			}
+			inTargetSection = false
+		}
+
+		if inTargetSection {
+			if paragraph, ok := node.(*ast.Paragraph); ok && entering {
+				item := extractText(paragraph)
+				items = append(items, strings.TrimSpace(item))
+				return ast.SkipChildren
+			}
+		}
+		return ast.GoToNext
+	})
+
+	if len(items) == 0 {
+		return nil, fmt.Errorf("%s section not found or empty", sectionName)
+	}
+
+	return items, nil
+}
+
+// findMissingItems finds items in a that are not in b, ensuring no duplicates are counted
+func findMissingItems(a, b []string) []string {
+	bSet := make(map[string]struct{}, len(b))
+	for _, x := range b {
+		bSet[x] = struct{}{}
+	}
+	var missing []string
+	seen := make(map[string]bool)
+	for _, x := range a {
+		if _, found := bSet[x]; !found && !seen[x] {
+			missing = append(missing, x)
+			seen[x] = true // Mark as seen to avoid counting duplicates
+		}
+	}
+	return missing
+}
 
 //package main
 
