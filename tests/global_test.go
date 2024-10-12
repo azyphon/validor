@@ -120,59 +120,64 @@ func (sv *SectionValidator) Validate() []error {
 	return allErrors
 }
 
-// validate checks if a section and its columns are correctly formatted
+// validate checks if a section and its items (either a table or a list) are correctly formatted
 func (s Section) validate(rootNode ast.Node) []error {
-	var errors []error
-	found := false
+    var errors []error
+    found := false
 
-	// Traverse the AST to find the section header
-	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
-			text := strings.TrimSpace(extractText(heading))
-			if strings.EqualFold(text, s.Header) || strings.EqualFold(text, s.Header+"s") {
-				found = true
+    // Traverse the AST to find the section header
+    ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+        if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
+            text := strings.TrimSpace(extractText(heading))
+            if strings.EqualFold(text, s.Header) || strings.EqualFold(text, s.Header+"s") {
+                found = true
 
-				if len(s.Columns) > 0 {
-					// Check for the table after the header
-					nextNode := getNextSibling(node)
-					if table, ok := nextNode.(*ast.Table); ok {
-						// Extract table headers
-						actualHeaders, err := extractTableHeaders(table)
-						if err != nil {
-							errors = append(errors, err)
-						} else if !equalSlices(actualHeaders, s.Columns) {
-							errors = append(errors, compareColumns(s.Header, s.Columns, actualHeaders))
-						}
-					} else {
-						errors = append(errors, formatError("missing table after header: %s", s.Header))
-					}
-				}
-				return ast.SkipChildren
-			}
-		}
-		return ast.GoToNext
-	})
+                // Check for lists or tables after the header
+                nextNode := getNextSibling(node)
 
-	if !found {
-		errors = append(errors, compareHeaders(s.Header, ""))
-	}
+                // Check if it's a table or list
+                if table, ok := nextNode.(*ast.Table); ok {
+                    actualHeaders, err := extractTableHeaders(table)
+                    if err != nil {
+                        errors = append(errors, err)
+                    } else if !equalSlices(actualHeaders, s.Columns) {
+                        errors = append(errors, compareColumns(s.Header, s.Columns, actualHeaders))
+                    }
+                } else if list, ok := nextNode.(*ast.List); ok {
+                    // If it's a list, we can validate that at least one item exists
+                    if len(list.GetChildren()) == 0 {
+                        errors = append(errors, formatError("list in section '%s' is empty", s.Header))
+                    }
+                } else {
+                    errors = append(errors, formatError("missing list or table after header: %s", s.Header))
+                }
 
-	return errors
+                return ast.SkipChildren
+            }
+        }
+        return ast.GoToNext
+    })
+
+    if !found {
+        errors = append(errors, compareHeaders(s.Header, ""))
+    }
+
+    return errors
 }
 
-// Helper function: extract the next sibling of a node
+// getNextSibling returns the next sibling of a node
 func getNextSibling(node ast.Node) ast.Node {
-	parent := node.GetParent()
-	if parent == nil {
-		return nil
-	}
-	children := parent.GetChildren()
-	for i, n := range children {
-		if n == node && i+1 < len(children) {
-			return children[i+1]
-		}
-	}
-	return nil
+    parent := node.GetParent()
+    if parent == nil {
+        return nil
+    }
+    children := parent.GetChildren()
+    for i, n := range children {
+        if n == node && i+1 < len(children) {
+            return children[i+1]
+        }
+    }
+    return nil
 }
 
 // Helper function: extract headers from a markdown table
