@@ -620,48 +620,6 @@ func findMissingItems(a, b []string) []string {
 	return missing
 }
 
-// extractMarkdownSectionItems extracts items from a markdown section presented as plain text.
-func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
-	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-	p := parser.NewWithExtensions(extensions)
-	rootNode := markdown.Parse([]byte(data), p)
-
-	var items []string
-	var inTargetSection bool
-
-	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
-			text := strings.TrimSpace(extractText(heading))
-			if strings.EqualFold(text, sectionName) || strings.EqualFold(text, sectionName+"s") {
-				inTargetSection = true
-				return ast.GoToNext
-			}
-			inTargetSection = false
-		}
-
-		if inTargetSection {
-			if paragraph, ok := node.(*ast.Paragraph); ok && entering {
-				// Extract paragraph text as individual items (assuming each item is on a new line)
-				paragraphText := strings.Split(extractText(paragraph), "\n")
-				for _, item := range paragraphText {
-					item = strings.TrimSpace(item)
-					if item != "" {
-						items = append(items, item)
-					}
-				}
-				return ast.SkipChildren
-			}
-		}
-		return ast.GoToNext
-	})
-
-	if len(items) == 0 {
-		return nil, fmt.Errorf("%s section not found or empty", sectionName)
-	}
-
-	return items, nil
-}
-
 // normalizeResourceName strips symbolic names like ".this" from resource names for comparison
 func normalizeResourceName(resourceName string) string {
 	// Strip anything after the first dot
@@ -697,6 +655,48 @@ func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []e
 	}
 
 	return errors
+}
+
+// extractMarkdownSectionItems extracts items from a markdown section (like Inputs or Outputs) in plain text.
+func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
+	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+	p := parser.NewWithExtensions(extensions)
+	rootNode := markdown.Parse([]byte(data), p)
+
+	var items []string
+	var inTargetSection bool
+
+	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
+			text := strings.TrimSpace(extractText(heading))
+			if strings.EqualFold(text, sectionName) || strings.EqualFold(text, sectionName+"s") {
+				inTargetSection = true
+				return ast.GoToNext
+			}
+			inTargetSection = false
+		}
+
+		if inTargetSection {
+			if paragraph, ok := node.(*ast.Paragraph); ok && entering {
+				// Extract plain text inputs/outputs from the paragraph
+				paragraphText := strings.Split(extractText(paragraph), "\n")
+				for _, item := range paragraphText {
+					item = strings.TrimSpace(item)
+					if item != "" {
+						items = append(items, item)
+					}
+				}
+				return ast.SkipChildren
+			}
+		}
+		return ast.GoToNext
+	})
+
+	if len(items) == 0 {
+		return nil, fmt.Errorf("%s section not found or empty", sectionName)
+	}
+
+	return items, nil
 }
 
 // extractReadmeResources extracts resources and data sources from the markdown, assuming plain text.
@@ -742,6 +742,11 @@ func extractReadmeResources(data string) ([]string, []string, error) {
 	}
 
 	return resources, dataSources, nil
+}
+
+// extractOutputsFromMarkdown extracts the Outputs section from markdown, assuming plain text format.
+func extractOutputsFromMarkdown(data string) ([]string, error) {
+	return extractMarkdownSectionItems(data, "Outputs")
 }
 
 
