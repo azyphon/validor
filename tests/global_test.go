@@ -415,34 +415,6 @@ func findMissingItems(a, b []string) []string {
 	return missing
 }
 
-func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
-	var errors []error
-
-	tfSet := make(map[string]bool)
-	for _, item := range tfItems {
-		tfSet[item] = true
-	}
-
-	mdSet := make(map[string]bool)
-	for _, item := range mdItems {
-		mdSet[item] = true
-	}
-
-	for _, tfItem := range tfItems {
-		if !mdSet[tfItem] {
-			errors = append(errors, formatError("%s missing in markdown: %s", itemType, tfItem))
-		}
-	}
-
-	for _, mdItem := range mdItems {
-		if !tfSet[mdItem] {
-			errors = append(errors, formatError("%s in markdown but missing in Terraform: %s", itemType, mdItem))
-		}
-	}
-
-	return errors
-}
-
 // extractTerraformItems extracts item names from a Terraform file given the block type
 func extractTerraformItems(filePath string, blockType string) ([]string, error) {
 	content, err := os.ReadFile(filePath)
@@ -522,38 +494,6 @@ func extractText(node ast.Node) string {
 	return sb.String()
 }
 
-// extractTerraformResources extracts resources and data sources from Terraform files
-func extractTerraformResources() ([]string, []string, error) {
-	var resources []string
-	var dataSources []string
-
-	workspace := os.Getenv("GITHUB_WORKSPACE")
-	if workspace == "" {
-		var err error
-		workspace, err = os.Getwd()
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get current working directory: %v", err)
-		}
-	}
-	mainPath := filepath.Join(workspace, "caller", "main.tf")
-	specificResources, specificDataSources, err := extractFromFilePath(mainPath)
-	if err != nil && !os.IsNotExist(err) {
-		return nil, nil, err
-	}
-	resources = append(resources, specificResources...)
-	dataSources = append(dataSources, specificDataSources...)
-
-	modulesPath := filepath.Join(workspace, "caller", "modules")
-	modulesResources, modulesDataSources, err := extractRecursively(modulesPath)
-	if err != nil {
-		return nil, nil, err
-	}
-	resources = append(resources, modulesResources...)
-	dataSources = append(dataSources, modulesDataSources...)
-
-	return resources, dataSources, nil
-}
-
 // extractRecursively extracts resources and data sources recursively
 func extractRecursively(dirPath string) ([]string, []string, error) {
 	var resources []string
@@ -580,62 +520,6 @@ func extractRecursively(dirPath string) ([]string, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return resources, dataSources, nil
-}
-
-// extractFromFilePath extracts resources and data sources from a Terraform file
-func extractFromFilePath(filePath string) ([]string, []string, error) {
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error reading file %s: %v", filepath.Base(filePath), err)
-	}
-
-	parser := hclparse.NewParser()
-	file, parseDiags := parser.ParseHCL(content, filePath)
-	if parseDiags.HasErrors() {
-		return nil, nil, fmt.Errorf("error parsing HCL in %s: %v", filepath.Base(filePath), parseDiags)
-	}
-
-	var resources []string
-	var dataSources []string
-	body := file.Body
-
-	// Initialize diagnostics variable
-	var diags hcl.Diagnostics
-
-	// Use PartialContent to allow unknown blocks
-	hclContent, _, contentDiags := body.PartialContent(&hcl.BodySchema{
-		Blocks: []hcl.BlockHeaderSchema{
-			{Type: "resource", LabelNames: []string{"type", "name"}},
-			{Type: "data", LabelNames: []string{"type", "name"}},
-		},
-	})
-
-	// Append diagnostics
-	diags = append(diags, contentDiags...)
-
-	// Filter out diagnostics related to unsupported block types
-	diags = filterUnsupportedBlockDiagnostics(diags)
-	if diags.HasErrors() {
-		return nil, nil, fmt.Errorf("error getting content from %s: %v", filepath.Base(filePath), diags)
-	}
-
-	if hclContent == nil {
-		// No relevant blocks found
-		return resources, dataSources, nil
-	}
-
-	for _, block := range hclContent.Blocks {
-		if len(block.Labels) >= 2 {
-			resourceType := strings.TrimSpace(block.Labels[0])
-			if block.Type == "resource" {
-				resources = append(resources, resourceType)
-			} else if block.Type == "data" {
-				dataSources = append(dataSources, resourceType)
-			}
-		}
-	}
-
 	return resources, dataSources, nil
 }
 
@@ -765,6 +649,115 @@ func extractItemName(text string) string {
 
 	// If no special format, just return the text as is
 	return text
+}
+
+func extractTerraformResources() ([]string, []string, error) {
+    var resources []string
+    var dataSources []string
+
+    workspace := os.Getenv("GITHUB_WORKSPACE")
+    if workspace == "" {
+        var err error
+        workspace, err = os.Getwd()
+        if err != nil {
+            return nil, nil, fmt.Errorf("failed to get current working directory: %v", err)
+        }
+    }
+    mainPath := filepath.Join(workspace, "caller", "main.tf")
+    specificResources, specificDataSources, err := extractFromFilePath(mainPath)
+    if err != nil && !os.IsNotExist(err) {
+        return nil, nil, err
+    }
+    resources = append(resources, specificResources...)
+    dataSources = append(dataSources, specificDataSources...)
+
+    modulesPath := filepath.Join(workspace, "caller", "modules")
+    modulesResources, modulesDataSources, err := extractRecursively(modulesPath)
+    if err != nil {
+        return nil, nil, err
+    }
+    resources = append(resources, modulesResources...)
+    dataSources = append(dataSources, modulesDataSources...)
+
+    return resources, dataSources, nil
+}
+
+func extractFromFilePath(filePath string) ([]string, []string, error) {
+    content, err := os.ReadFile(filePath)
+    if err != nil {
+        return nil, nil, fmt.Errorf("error reading file %s: %v", filepath.Base(filePath), err)
+    }
+
+    parser := hclparse.NewParser()
+    file, parseDiags := parser.ParseHCL(content, filePath)
+    if parseDiags.HasErrors() {
+        return nil, nil, fmt.Errorf("error parsing HCL in %s: %v", filepath.Base(filePath), parseDiags)
+    }
+
+    var resources []string
+    var dataSources []string
+    body := file.Body
+
+    hclContent, _, contentDiags := body.PartialContent(&hcl.BodySchema{
+        Blocks: []hcl.BlockHeaderSchema{
+            {Type: "resource", LabelNames: []string{"type", "name"}},
+            {Type: "data", LabelNames: []string{"type", "name"}},
+        },
+    })
+
+    diags := filterUnsupportedBlockDiagnostics(contentDiags)
+    if diags.HasErrors() {
+        return nil, nil, fmt.Errorf("error getting content from %s: %v", filepath.Base(filePath), diags)
+    }
+
+    if hclContent == nil {
+        return resources, dataSources, nil
+    }
+
+    for _, block := range hclContent.Blocks {
+        if len(block.Labels) >= 2 {
+            resourceType := strings.TrimSpace(block.Labels[0])
+            resourceName := strings.TrimSpace(block.Labels[1])
+            fullResourceName := resourceType + "." + resourceName
+            if block.Type == "resource" {
+                resources = append(resources, resourceType)
+                resources = append(resources, fullResourceName)
+            } else if block.Type == "data" {
+                dataSources = append(dataSources, resourceType)
+                dataSources = append(dataSources, fullResourceName)
+            }
+        }
+    }
+
+    return resources, dataSources, nil
+}
+
+func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
+    var errors []error
+
+    tfSet := make(map[string]bool)
+    for _, item := range tfItems {
+        tfSet[item] = true
+    }
+
+    mdSet := make(map[string]bool)
+    for _, item := range mdItems {
+        mdSet[item] = true
+    }
+
+    for _, tfItem := range tfItems {
+        if !mdSet[tfItem] && !mdSet[strings.Split(tfItem, ".")[0]] {
+            errors = append(errors, formatError("%s missing in markdown: %s", itemType, tfItem))
+        }
+    }
+
+    for _, mdItem := range mdItems {
+        if !tfSet[mdItem] && !tfSet[strings.Split(mdItem, ".")[0]] {
+            errors = append(errors, formatError("%s in markdown but missing in Terraform: %s", itemType, mdItem))
+        }
+    }
+
+    return errors
 }
 
 //package main
