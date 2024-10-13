@@ -76,12 +76,12 @@ func (mv *MarkdownValidator) Validate() []error {
 
 // Section represents a markdown section
 //type Section struct {
-	//Header string
+//Header string
 //}
 
 type Section struct {
-    Header   string
-    Optional bool
+	Header   string
+	Optional bool
 }
 
 // SectionValidator validates markdown sections
@@ -98,13 +98,9 @@ func NewSectionValidator(data string) *SectionValidator {
 		{Header: "Resources"},
 		{Header: "Providers"},
 		{Header: "Requirements"},
-		//{Header: "Inputs"},
-		{Header: "Inputs", Optional: true},
 		{Header: "Outputs"},
-		//{Header: "Features"},
-		//{Header: "Testing"},
-		//{Header: "Authors"},
-		//{Header: "License"},
+		{Header: "Inputs", Optional: true},
+		{Header: "Optional Inputs", Optional: true},
 	}
 
 	// Parse the markdown content into an AST
@@ -129,49 +125,49 @@ func (sv *SectionValidator) Validate() []error {
 }
 
 func (s Section) validate(rootNode ast.Node) []error {
-    var errors []error
-    found := false
+	var errors []error
+	found := false
 
-    ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-        if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
-            text := strings.TrimSpace(extractText(heading))
-            if strings.EqualFold(text, s.Header) || strings.EqualFold(text, s.Header+"s") {
-                found = true
-                return ast.SkipChildren
-            }
-        }
-        return ast.GoToNext
-    })
+	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
+			text := strings.TrimSpace(extractText(heading))
+			if strings.EqualFold(text, s.Header) || strings.EqualFold(text, s.Header+"s") {
+				found = true
+				return ast.SkipChildren
+			}
+		}
+		return ast.GoToNext
+	})
 
-    if !found && !s.Optional {
-        errors = append(errors, compareHeaders(s.Header, ""))
-    }
+	if !found && !s.Optional {
+		errors = append(errors, compareHeaders(s.Header, ""))
+	}
 
-    return errors
+	return errors
 }
 
 // validate checks if a section is present
 //func (s Section) validate(rootNode ast.Node) []error {
-	//var errors []error
-	//found := false
+//var errors []error
+//found := false
 
-	//// Traverse the AST to find the section header
-	//ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-		//if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
-			//text := strings.TrimSpace(extractText(heading))
-			//if strings.EqualFold(text, s.Header) || strings.EqualFold(text, s.Header+"s") {
-				//found = true
-				//return ast.SkipChildren
-			//}
-		//}
-		//return ast.GoToNext
-	//})
+//// Traverse the AST to find the section header
+//ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+//if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
+//text := strings.TrimSpace(extractText(heading))
+//if strings.EqualFold(text, s.Header) || strings.EqualFold(text, s.Header+"s") {
+//found = true
+//return ast.SkipChildren
+//}
+//}
+//return ast.GoToNext
+//})
 
-	//if !found {
-		//errors = append(errors, compareHeaders(s.Header, ""))
-	//}
+//if !found {
+//errors = append(errors, compareHeaders(s.Header, ""))
+//}
 
-	//return errors
+//return errors
 //}
 
 // FileValidator validates the presence of required files
@@ -339,28 +335,34 @@ func NewItemValidator(data, itemType, blockType, section, fileName string) *Item
 	}
 }
 
-// Validate compares Terraform items with those documented in the markdown
 func (iv *ItemValidator) Validate() []error {
-	workspace := os.Getenv("GITHUB_WORKSPACE")
-	if workspace == "" {
-		var err error
-		workspace, err = os.Getwd()
-		if err != nil {
-			return []error{fmt.Errorf("failed to get current working directory: %v", err)}
-		}
-	}
-	filePath := filepath.Join(workspace, "caller", iv.fileName)
-	tfItems, err := extractTerraformItems(filePath, iv.blockType)
-	if err != nil {
-		return []error{err}
-	}
+    workspace := os.Getenv("GITHUB_WORKSPACE")
+    if workspace == "" {
+        var err error
+        workspace, err = os.Getwd()
+        if err != nil {
+            return []error{fmt.Errorf("failed to get current working directory: %v", err)}
+        }
+    }
+    filePath := filepath.Join(workspace, "caller", iv.fileName)
+    tfItems, err := extractTerraformItems(filePath, iv.blockType)
+    if err != nil {
+        return []error{err}
+    }
 
-	mdItems, err := extractMarkdownSectionItems(iv.data, iv.section)
-	if err != nil {
-		return []error{err}
-	}
+    mdItems, err := extractMarkdownSectionItems(iv.data, iv.section)
+    if err != nil {
+        return []error{err}
+    }
 
-	return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
+    optionalMdItems, err := extractMarkdownSectionItems(iv.data, "Optional "+iv.section)
+    if err != nil {
+        return []error{err}
+    }
+
+    mdItems = append(mdItems, optionalMdItems...)
+
+    return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
 }
 
 // Helper functions
@@ -658,6 +660,7 @@ func extractReadmeResources(data string) ([]string, []string, error) {
 						if len(parts) >= 2 {
 							resourceType := parts[0]
 							resources = append(resources, resourceType)
+							resources = append(resources, strings.TrimSuffix(parts[0], ".this"))
 						}
 					}
 				}
@@ -675,34 +678,41 @@ func extractReadmeResources(data string) ([]string, []string, error) {
 }
 
 func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
-    extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-    p := parser.NewWithExtensions(extensions)
-    rootNode := markdown.Parse([]byte(data), p)
+	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+	p := parser.NewWithExtensions(extensions)
+	rootNode := markdown.Parse([]byte(data), p)
 
-    var items []string
-    var inTargetSection bool
+	var items []string
+	var inTargetSection bool
 
-    ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-        if heading, ok := node.(*ast.Heading); ok && entering {
-            text := strings.TrimSpace(extractText(heading))
-            if heading.Level == 2 && (strings.EqualFold(text, sectionName) || strings.EqualFold(text, sectionName+"s")) {
-                inTargetSection = true
-                return ast.GoToNext
-            } else if heading.Level == 2 {
-                inTargetSection = false
-            }
-        }
+	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+		if heading, ok := node.(*ast.Heading); ok && entering {
+			text := strings.TrimSpace(extractText(heading))
+			if heading.Level == 2 && (strings.EqualFold(text, sectionName) || strings.EqualFold(text, sectionName+"s") || strings.EqualFold(text, "Optional "+sectionName) || strings.EqualFold(text, "Optional "+sectionName+"s")) {
+				inTargetSection = true
+				return ast.GoToNext
+			} else if heading.Level == 2 {
+				inTargetSection = false
+			}
+		}
 
-        if inTargetSection && entering {
-            if heading, ok := node.(*ast.Heading); ok && heading.Level == 3 {
-                items = append(items, strings.TrimSpace(extractText(heading)))
-            }
-        }
+		if inTargetSection && entering {
+			if heading, ok := node.(*ast.Heading); ok && heading.Level == 3 {
+				headingText := strings.TrimSpace(extractText(heading))
+				if strings.HasPrefix(headingText, "<a name=\"input_") {
+					parts := strings.Split(headingText, "\"")
+					if len(parts) >= 2 {
+						varName := strings.TrimPrefix(parts[1], "input_")
+						items = append(items, varName)
+					}
+				}
+			}
+		}
 
-        return ast.GoToNext
-    })
+		return ast.GoToNext
+	})
 
-    return items, nil
+	return items, nil
 }
 
 //package main
