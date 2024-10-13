@@ -335,30 +335,30 @@ func NewItemValidator(data, itemType, blockType, section, fileName string) *Item
 }
 
 func (iv *ItemValidator) Validate() []error {
-    workspace := os.Getenv("GITHUB_WORKSPACE")
-    if workspace == "" {
-        var err error
-        workspace, err = os.Getwd()
-        if err != nil {
-            return []error{fmt.Errorf("failed to get current working directory: %v", err)}
-        }
-    }
-    filePath := filepath.Join(workspace, "caller", iv.fileName)
-    tfItems, err := extractTerraformItems(filePath, iv.blockType)
-    if err != nil {
-        return []error{err}
-    }
+	workspace := os.Getenv("GITHUB_WORKSPACE")
+	if workspace == "" {
+		var err error
+		workspace, err = os.Getwd()
+		if err != nil {
+			return []error{fmt.Errorf("failed to get current working directory: %v", err)}
+		}
+	}
+	filePath := filepath.Join(workspace, "caller", iv.fileName)
+	tfItems, err := extractTerraformItems(filePath, iv.blockType)
+	if err != nil {
+		return []error{err}
+	}
 
-    mdItems, err := extractMarkdownSectionItems(iv.data, iv.section)
-    if err != nil {
-        return []error{err}
-    }
+	mdItems, err := extractMarkdownSectionItems(iv.data, iv.section)
+	if err != nil {
+		return []error{err}
+	}
 
-    // Debug print
-    fmt.Printf("%s in Terraform: %v\n", iv.itemType, tfItems)
-    fmt.Printf("%s in Markdown: %v\n", iv.itemType, mdItems)
+	// Debug print
+	fmt.Printf("%s in Terraform: %v\n", iv.itemType, tfItems)
+	fmt.Printf("%s in Markdown: %v\n", iv.itemType, mdItems)
 
-    return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
+	return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
 }
 
 func removeDuplicates(items []string) []string {
@@ -534,47 +534,47 @@ func TestMarkdown(t *testing.T) {
 }
 
 func extractReadmeResources(data string) ([]string, []string, error) {
-    extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-    p := parser.NewWithExtensions(extensions)
-    rootNode := markdown.Parse([]byte(data), p)
+	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+	p := parser.NewWithExtensions(extensions)
+	rootNode := markdown.Parse([]byte(data), p)
 
-    var resources []string
-    var dataSources []string
-    var inResourcesSection bool
+	var resources []string
+	var dataSources []string
+	var inResourcesSection bool
 
-    ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-        if heading, ok := node.(*ast.Heading); ok && entering {
-            text := strings.TrimSpace(extractText(heading))
-            if heading.Level == 2 && strings.EqualFold(text, "Resources") {
-                inResourcesSection = true
-                return ast.GoToNext
-            } else if heading.Level == 2 {
-                inResourcesSection = false
-            }
-        }
+	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+		if heading, ok := node.(*ast.Heading); ok && entering {
+			text := strings.TrimSpace(extractText(heading))
+			if heading.Level == 2 && strings.EqualFold(text, "Resources") {
+				inResourcesSection = true
+				return ast.GoToNext
+			} else if heading.Level == 2 {
+				inResourcesSection = false
+			}
+		}
 
-        if inResourcesSection && entering {
-            if list, ok := node.(*ast.List); ok {
-                for _, item := range list.Children {
-                    if listItem, ok := item.(*ast.ListItem); ok {
-                        itemText := strings.TrimSpace(extractText(listItem))
-                        parts := strings.Split(itemText, " ")
-                        if len(parts) >= 1 {
-                            resources = append(resources, parts[0])
-                        }
-                    }
-                }
-            }
-        }
+		if inResourcesSection && entering {
+			if list, ok := node.(*ast.List); ok {
+				for _, item := range list.Children {
+					if listItem, ok := item.(*ast.ListItem); ok {
+						itemText := strings.TrimSpace(extractText(listItem))
+						parts := strings.Split(itemText, " ")
+						if len(parts) >= 1 {
+							resources = append(resources, parts[0])
+						}
+					}
+				}
+			}
+		}
 
-        return ast.GoToNext
-    })
+		return ast.GoToNext
+	})
 
-    if len(resources) == 0 && len(dataSources) == 0 {
-        return nil, nil, errors.New("resources section not found or empty")
-    }
+	if len(resources) == 0 && len(dataSources) == 0 {
+		return nil, nil, errors.New("resources section not found or empty")
+	}
 
-    return resources, dataSources, nil
+	return resources, dataSources, nil
 }
 
 func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
@@ -636,112 +636,112 @@ func extractItemName(text string) string {
 }
 
 func extractTerraformResources() ([]string, []string, error) {
-    var resources []string
-    var dataSources []string
+	var resources []string
+	var dataSources []string
 
-    workspace := os.Getenv("GITHUB_WORKSPACE")
-    if workspace == "" {
-        var err error
-        workspace, err = os.Getwd()
-        if err != nil {
-            return nil, nil, fmt.Errorf("failed to get current working directory: %v", err)
-        }
-    }
-    mainPath := filepath.Join(workspace, "caller", "main.tf")
-    specificResources, specificDataSources, err := extractFromFilePath(mainPath)
-    if err != nil && !os.IsNotExist(err) {
-        return nil, nil, err
-    }
-    resources = append(resources, specificResources...)
-    dataSources = append(dataSources, specificDataSources...)
+	workspace := os.Getenv("GITHUB_WORKSPACE")
+	if workspace == "" {
+		var err error
+		workspace, err = os.Getwd()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get current working directory: %v", err)
+		}
+	}
+	mainPath := filepath.Join(workspace, "caller", "main.tf")
+	specificResources, specificDataSources, err := extractFromFilePath(mainPath)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, nil, err
+	}
+	resources = append(resources, specificResources...)
+	dataSources = append(dataSources, specificDataSources...)
 
-    modulesPath := filepath.Join(workspace, "caller", "modules")
-    modulesResources, modulesDataSources, err := extractRecursively(modulesPath)
-    if err != nil {
-        return nil, nil, err
-    }
-    resources = append(resources, modulesResources...)
-    dataSources = append(dataSources, modulesDataSources...)
+	modulesPath := filepath.Join(workspace, "caller", "modules")
+	modulesResources, modulesDataSources, err := extractRecursively(modulesPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	resources = append(resources, modulesResources...)
+	dataSources = append(dataSources, modulesDataSources...)
 
-    return resources, dataSources, nil
+	return resources, dataSources, nil
 }
 
 func extractFromFilePath(filePath string) ([]string, []string, error) {
-    content, err := os.ReadFile(filePath)
-    if err != nil {
-        return nil, nil, fmt.Errorf("error reading file %s: %v", filepath.Base(filePath), err)
-    }
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error reading file %s: %v", filepath.Base(filePath), err)
+	}
 
-    parser := hclparse.NewParser()
-    file, parseDiags := parser.ParseHCL(content, filePath)
-    if parseDiags.HasErrors() {
-        return nil, nil, fmt.Errorf("error parsing HCL in %s: %v", filepath.Base(filePath), parseDiags)
-    }
+	parser := hclparse.NewParser()
+	file, parseDiags := parser.ParseHCL(content, filePath)
+	if parseDiags.HasErrors() {
+		return nil, nil, fmt.Errorf("error parsing HCL in %s: %v", filepath.Base(filePath), parseDiags)
+	}
 
-    var resources []string
-    var dataSources []string
-    body := file.Body
+	var resources []string
+	var dataSources []string
+	body := file.Body
 
-    hclContent, _, contentDiags := body.PartialContent(&hcl.BodySchema{
-        Blocks: []hcl.BlockHeaderSchema{
-            {Type: "resource", LabelNames: []string{"type", "name"}},
-            {Type: "data", LabelNames: []string{"type", "name"}},
-        },
-    })
+	hclContent, _, contentDiags := body.PartialContent(&hcl.BodySchema{
+		Blocks: []hcl.BlockHeaderSchema{
+			{Type: "resource", LabelNames: []string{"type", "name"}},
+			{Type: "data", LabelNames: []string{"type", "name"}},
+		},
+	})
 
-    diags := filterUnsupportedBlockDiagnostics(contentDiags)
-    if diags.HasErrors() {
-        return nil, nil, fmt.Errorf("error getting content from %s: %v", filepath.Base(filePath), diags)
-    }
+	diags := filterUnsupportedBlockDiagnostics(contentDiags)
+	if diags.HasErrors() {
+		return nil, nil, fmt.Errorf("error getting content from %s: %v", filepath.Base(filePath), diags)
+	}
 
-    if hclContent == nil {
-        return resources, dataSources, nil
-    }
+	if hclContent == nil {
+		return resources, dataSources, nil
+	}
 
-    for _, block := range hclContent.Blocks {
-        if len(block.Labels) >= 2 {
-            resourceType := strings.TrimSpace(block.Labels[0])
-            resourceName := strings.TrimSpace(block.Labels[1])
-            fullResourceName := resourceType + "." + resourceName
-            if block.Type == "resource" {
-                resources = append(resources, resourceType)
-                resources = append(resources, fullResourceName)
-            } else if block.Type == "data" {
-                dataSources = append(dataSources, resourceType)
-                dataSources = append(dataSources, fullResourceName)
-            }
-        }
-    }
+	for _, block := range hclContent.Blocks {
+		if len(block.Labels) >= 2 {
+			resourceType := strings.TrimSpace(block.Labels[0])
+			resourceName := strings.TrimSpace(block.Labels[1])
+			fullResourceName := resourceType + "." + resourceName
+			if block.Type == "resource" {
+				resources = append(resources, resourceType)
+				resources = append(resources, fullResourceName)
+			} else if block.Type == "data" {
+				dataSources = append(dataSources, resourceType)
+				dataSources = append(dataSources, fullResourceName)
+			}
+		}
+	}
 
-    return resources, dataSources, nil
+	return resources, dataSources, nil
 }
 
 func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
-    var errors []error
+	var errors []error
 
-    tfSet := make(map[string]bool)
-    for _, item := range tfItems {
-        tfSet[item] = true
-    }
+	tfSet := make(map[string]bool)
+	for _, item := range tfItems {
+		tfSet[item] = true
+	}
 
-    mdSet := make(map[string]bool)
-    for _, item := range mdItems {
-        mdSet[item] = true
-    }
+	mdSet := make(map[string]bool)
+	for _, item := range mdItems {
+		mdSet[item] = true
+	}
 
-    for _, tfItem := range tfItems {
-        if !mdSet[tfItem] {
-            errors = append(errors, formatError("%s in Terraform but missing in markdown: %s", itemType, tfItem))
-        }
-    }
+	for _, tfItem := range tfItems {
+		if !mdSet[tfItem] {
+			errors = append(errors, formatError("%s in Terraform but missing in markdown: %s", itemType, tfItem))
+		}
+	}
 
-    for _, mdItem := range mdItems {
-        if !tfSet[mdItem] {
-            errors = append(errors, formatError("%s in markdown but missing in Terraform: %s", itemType, mdItem))
-        }
-    }
+	for _, mdItem := range mdItems {
+		if !tfSet[mdItem] {
+			errors = append(errors, formatError("%s in markdown but missing in Terraform: %s", itemType, mdItem))
+		}
+	}
 
-    return errors
+	return errors
 }
 
 //package main
