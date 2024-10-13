@@ -335,40 +335,30 @@ func NewItemValidator(data, itemType, blockType, section, fileName string) *Item
 }
 
 func (iv *ItemValidator) Validate() []error {
-	workspace := os.Getenv("GITHUB_WORKSPACE")
-	if workspace == "" {
-		var err error
-		workspace, err = os.Getwd()
-		if err != nil {
-			return []error{fmt.Errorf("failed to get current working directory: %v", err)}
-		}
-	}
-	filePath := filepath.Join(workspace, "caller", iv.fileName)
-	tfItems, err := extractTerraformItems(filePath, iv.blockType)
-	if err != nil {
-		return []error{err}
-	}
+    workspace := os.Getenv("GITHUB_WORKSPACE")
+    if workspace == "" {
+        var err error
+        workspace, err = os.Getwd()
+        if err != nil {
+            return []error{fmt.Errorf("failed to get current working directory: %v", err)}
+        }
+    }
+    filePath := filepath.Join(workspace, "caller", iv.fileName)
+    tfItems, err := extractTerraformItems(filePath, iv.blockType)
+    if err != nil {
+        return []error{err}
+    }
 
-	var mdItems []string
+    mdItems, err := extractMarkdownSectionItems(iv.data, iv.section)
+    if err != nil {
+        return []error{err}
+    }
 
-	// Extract items from all relevant sections
-	sections := []string{iv.section, "Required " + iv.section, "Optional " + iv.section}
-	for _, section := range sections {
-		items, err := extractMarkdownSectionItems(iv.data, section)
-		if err != nil {
-			return []error{err}
-		}
-		mdItems = append(mdItems, items...)
-	}
+    // Debug print
+    fmt.Printf("%s in Terraform: %v\n", iv.itemType, tfItems)
+    fmt.Printf("%s in Markdown: %v\n", iv.itemType, mdItems)
 
-	// Remove duplicates from mdItems
-	mdItems = removeDuplicates(mdItems)
-
-	// Debug print
-	fmt.Printf("Terraform %s: %v\n", iv.itemType, tfItems)
-	fmt.Printf("Markdown %s: %v\n", iv.itemType, mdItems)
-
-	return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
+    return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
 }
 
 func removeDuplicates(items []string) []string {
@@ -544,53 +534,47 @@ func TestMarkdown(t *testing.T) {
 }
 
 func extractReadmeResources(data string) ([]string, []string, error) {
-	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-	p := parser.NewWithExtensions(extensions)
-	rootNode := markdown.Parse([]byte(data), p)
+    extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+    p := parser.NewWithExtensions(extensions)
+    rootNode := markdown.Parse([]byte(data), p)
 
-	var resources []string
-	var dataSources []string
-	var inResourcesSection bool
+    var resources []string
+    var dataSources []string
+    var inResourcesSection bool
 
-	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-		if heading, ok := node.(*ast.Heading); ok && entering {
-			text := strings.TrimSpace(extractText(heading))
-			if heading.Level == 2 && strings.EqualFold(text, "Resources") {
-				inResourcesSection = true
-				return ast.GoToNext
-			} else if heading.Level == 2 {
-				inResourcesSection = false
-			}
-		}
+    ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+        if heading, ok := node.(*ast.Heading); ok && entering {
+            text := strings.TrimSpace(extractText(heading))
+            if heading.Level == 2 && strings.EqualFold(text, "Resources") {
+                inResourcesSection = true
+                return ast.GoToNext
+            } else if heading.Level == 2 {
+                inResourcesSection = false
+            }
+        }
 
-		if inResourcesSection && entering {
-			if list, ok := node.(*ast.List); ok {
-				for _, item := range list.Children {
-					if listItem, ok := item.(*ast.ListItem); ok {
-						itemText := strings.TrimSpace(extractText(listItem))
-						parts := strings.SplitN(itemText, " ", 2)
-						if len(parts) >= 1 {
-							fullResourceName := parts[0]
-							resourceParts := strings.Split(fullResourceName, ".")
-							if len(resourceParts) > 0 {
-								resourceType := resourceParts[0]
-								resources = append(resources, resourceType)
-								resources = append(resources, fullResourceName)
-							}
-						}
-					}
-				}
-			}
-		}
+        if inResourcesSection && entering {
+            if list, ok := node.(*ast.List); ok {
+                for _, item := range list.Children {
+                    if listItem, ok := item.(*ast.ListItem); ok {
+                        itemText := strings.TrimSpace(extractText(listItem))
+                        parts := strings.Split(itemText, " ")
+                        if len(parts) >= 1 {
+                            resources = append(resources, parts[0])
+                        }
+                    }
+                }
+            }
+        }
 
-		return ast.GoToNext
-	})
+        return ast.GoToNext
+    })
 
-	if len(resources) == 0 && len(dataSources) == 0 {
-		return nil, nil, errors.New("resources section not found or empty")
-	}
+    if len(resources) == 0 && len(dataSources) == 0 {
+        return nil, nil, errors.New("resources section not found or empty")
+    }
 
-	return resources, dataSources, nil
+    return resources, dataSources, nil
 }
 
 func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
@@ -746,13 +730,13 @@ func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []e
     }
 
     for _, tfItem := range tfItems {
-        if !mdSet[tfItem] && !mdSet[strings.Split(tfItem, ".")[0]] {
-            errors = append(errors, formatError("%s missing in markdown: %s", itemType, tfItem))
+        if !mdSet[tfItem] {
+            errors = append(errors, formatError("%s in Terraform but missing in markdown: %s", itemType, tfItem))
         }
     }
 
     for _, mdItem := range mdItems {
-        if !tfSet[mdItem] && !tfSet[strings.Split(mdItem, ".")[0]] {
+        if !tfSet[mdItem] {
             errors = append(errors, formatError("%s in markdown but missing in Terraform: %s", itemType, mdItem))
         }
     }
