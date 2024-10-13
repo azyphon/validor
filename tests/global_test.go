@@ -361,6 +361,10 @@ func (iv *ItemValidator) Validate() []error {
         mdItems = append(mdItems, items...)
     }
 
+    // Debug print
+    fmt.Printf("Terraform %s: %v\n", iv.itemType, tfItems)
+    fmt.Printf("Markdown %s: %v\n", iv.itemType, mdItems)
+
     return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
 }
 
@@ -717,13 +721,9 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
         if inTargetSection && entering {
             if heading, ok := node.(*ast.Heading); ok && heading.Level == 3 {
                 headingText := strings.TrimSpace(extractText(heading))
-                if strings.Contains(headingText, "input_") || strings.Contains(headingText, "output_") {
-                    parts := strings.Split(headingText, "]")
-                    if len(parts) > 1 {
-                        itemName := strings.TrimSpace(parts[1])
-                        itemName = strings.Trim(itemName, "[]")
-                        items = append(items, itemName)
-                    }
+                itemName := extractItemName(headingText)
+                if itemName != "" {
+                    items = append(items, itemName)
                 }
             }
         }
@@ -732,6 +732,24 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
     })
 
     return items, nil
+}
+
+func extractItemName(text string) string {
+    // Try to extract name from <a name="input_xxx"></a> [xxx] format
+    if strings.Contains(text, "<a name=\"input_") || strings.Contains(text, "<a name=\"output_") {
+        parts := strings.Split(text, "\"")
+        if len(parts) >= 2 {
+            return strings.TrimPrefix(strings.TrimPrefix(parts[1], "input_"), "output_")
+        }
+    }
+
+    // Try to extract name from [xxx] format
+    if strings.HasPrefix(text, "[") && strings.Contains(text, "]") {
+        return strings.Trim(strings.Split(text, "]")[0], "[]")
+    }
+
+    // If no special format, just return the text as is
+    return text
 }
 
 //package main
