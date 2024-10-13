@@ -30,39 +30,38 @@ type MarkdownValidator struct {
 	validators []Validator
 }
 
-// NewMarkdownValidator creates a new MarkdownValidator
 func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
-	if envPath := os.Getenv("README_PATH"); envPath != "" {
-		readmePath = envPath
-	}
+    if envPath := os.Getenv("README_PATH"); envPath != "" {
+        readmePath = envPath
+    }
 
-	absReadmePath, err := filepath.Abs(readmePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path: %v", err)
-	}
+    absReadmePath, err := filepath.Abs(readmePath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to get absolute path: %v", err)
+    }
 
-	dataBytes, err := os.ReadFile(absReadmePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %v", err)
-	}
-	data := string(dataBytes)
+    dataBytes, err := os.ReadFile(absReadmePath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read file: %v", err)
+    }
+    data := string(dataBytes)
 
-	mv := &MarkdownValidator{
-		readmePath: absReadmePath,
-		data:       data,
-	}
+    mv := &MarkdownValidator{
+        readmePath: absReadmePath,
+        data:       data,
+    }
 
-	// Initialize validators
-	mv.validators = []Validator{
-		NewSectionValidator(data),
-		NewFileValidator(absReadmePath),
-		NewURLValidator(data),
-		NewTerraformDefinitionValidator(data),
-		NewItemValidator(data, "Variables", "variable", "Inputs", "variables.tf"),
-		NewItemValidator(data, "Outputs", "output", "Outputs", "outputs.tf"),
-	}
+    // Initialize validators
+    mv.validators = []Validator{
+        NewSectionValidator(data),
+        NewFileValidator(absReadmePath),
+        NewURLValidator(data),
+        NewTerraformDefinitionValidator(data),
+        NewItemValidator(data, "Variables", "variable", "Inputs", "variables.tf"),
+        NewItemValidator(data, "Outputs", "output", "Outputs", "outputs.tf"),
+    }
 
-	return mv, nil
+    return mv, nil
 }
 
 // Validate runs all registered validators
@@ -350,23 +349,22 @@ func (iv *ItemValidator) Validate() []error {
         return []error{err}
     }
 
-    mdItems, err := extractMarkdownSectionItems(iv.data, iv.section)
-    if err != nil {
-        return []error{err}
-    }
+    var mdItems []string
 
-    optionalMdItems, err := extractMarkdownSectionItems(iv.data, "Optional "+iv.section)
-    if err != nil {
-        return []error{err}
+    // Extract items from all relevant sections
+    sections := []string{iv.section, "Required " + iv.section, "Optional " + iv.section}
+    for _, section := range sections {
+        items, err := extractMarkdownSectionItems(iv.data, section)
+        if err != nil {
+            return []error{err}
+        }
+        mdItems = append(mdItems, items...)
     }
-
-    mdItems = append(mdItems, optionalMdItems...)
 
     return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
 }
 
 // Helper functions
-
 // compareHeaders compares expected and actual headers
 func compareHeaders(expected, actual string) error {
 	if expected != actual {
@@ -398,21 +396,32 @@ func findMissingItems(a, b []string) []string {
 	return missing
 }
 
-// compareTerraformAndMarkdown compares items in Terraform and markdown
 func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
-	var errors []error
+    var errors []error
 
-	missingInMarkdown := findMissingItems(tfItems, mdItems)
-	if len(missingInMarkdown) > 0 {
-		errors = append(errors, formatError("%s missing in markdown:\n  %s", itemType, strings.Join(missingInMarkdown, "\n  ")))
-	}
+    tfSet := make(map[string]bool)
+    for _, item := range tfItems {
+        tfSet[item] = true
+    }
 
-	missingInTerraform := findMissingItems(mdItems, tfItems)
-	if len(missingInTerraform) > 0 {
-		errors = append(errors, formatError("%s in markdown but missing in Terraform:\n  %s", itemType, strings.Join(missingInTerraform, "\n  ")))
-	}
+    mdSet := make(map[string]bool)
+    for _, item := range mdItems {
+        mdSet[item] = true
+    }
 
-	return errors
+    for _, tfItem := range tfItems {
+        if !mdSet[tfItem] && !mdSet[strings.Split(tfItem, ".")[0]] {
+            errors = append(errors, formatError("%s missing in markdown: %s", itemType, tfItem))
+        }
+    }
+
+    for _, mdItem := range mdItems {
+        if !tfSet[mdItem] && !tfSet[strings.Split(mdItem, ".")[0]] {
+            errors = append(errors, formatError("%s in markdown but missing in Terraform: %s", itemType, mdItem))
+        }
+    }
+
+    return errors
 }
 
 // extractTerraformItems extracts item names from a Terraform file given the block type
@@ -632,87 +641,97 @@ func TestMarkdown(t *testing.T) {
 }
 
 func extractReadmeResources(data string) ([]string, []string, error) {
-	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-	p := parser.NewWithExtensions(extensions)
-	rootNode := markdown.Parse([]byte(data), p)
+    extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+    p := parser.NewWithExtensions(extensions)
+    rootNode := markdown.Parse([]byte(data), p)
 
-	var resources []string
-	var dataSources []string
-	var inResourcesSection bool
+    var resources []string
+    var dataSources []string
+    var inResourcesSection bool
 
-	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-		if heading, ok := node.(*ast.Heading); ok && entering {
-			text := strings.TrimSpace(extractText(heading))
-			if heading.Level == 2 && strings.EqualFold(text, "Resources") {
-				inResourcesSection = true
-				return ast.GoToNext
-			} else if heading.Level == 2 {
-				inResourcesSection = false
-			}
-		}
+    ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+        if heading, ok := node.(*ast.Heading); ok && entering {
+            text := strings.TrimSpace(extractText(heading))
+            if heading.Level == 2 && strings.EqualFold(text, "Resources") {
+                inResourcesSection = true
+                return ast.GoToNext
+            } else if heading.Level == 2 {
+                inResourcesSection = false
+            }
+        }
 
-		if inResourcesSection && entering {
-			if list, ok := node.(*ast.List); ok {
-				for _, item := range list.Children {
-					if listItem, ok := item.(*ast.ListItem); ok {
-						itemText := strings.TrimSpace(extractText(listItem))
-						parts := strings.Split(itemText, " ")
-						if len(parts) >= 2 {
-							resourceType := parts[0]
-							resources = append(resources, resourceType)
-							resources = append(resources, strings.TrimSuffix(parts[0], ".this"))
-						}
-					}
-				}
-			}
-		}
+        if inResourcesSection && entering {
+            if list, ok := node.(*ast.List); ok {
+                for _, item := range list.Children {
+                    if listItem, ok := item.(*ast.ListItem); ok {
+                        itemText := strings.TrimSpace(extractText(listItem))
+                        parts := strings.SplitN(itemText, " ", 2)
+                        if len(parts) >= 1 {
+                            fullResourceName := parts[0]
+                            resourceParts := strings.Split(fullResourceName, ".")
+                            if len(resourceParts) > 0 {
+                                resourceType := resourceParts[0]
+                                resources = append(resources, resourceType)
+                                resources = append(resources, fullResourceName)
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
-		return ast.GoToNext
-	})
+        return ast.GoToNext
+    })
 
-	if len(resources) == 0 && len(dataSources) == 0 {
-		return nil, nil, errors.New("resources section not found or empty")
-	}
+    if len(resources) == 0 && len(dataSources) == 0 {
+        return nil, nil, errors.New("resources section not found or empty")
+    }
 
-	return resources, dataSources, nil
+    return resources, dataSources, nil
 }
 
 func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
-	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-	p := parser.NewWithExtensions(extensions)
-	rootNode := markdown.Parse([]byte(data), p)
+    extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+    p := parser.NewWithExtensions(extensions)
+    rootNode := markdown.Parse([]byte(data), p)
 
-	var items []string
-	var inTargetSection bool
+    var items []string
+    var inTargetSection bool
 
-	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-		if heading, ok := node.(*ast.Heading); ok && entering {
-			text := strings.TrimSpace(extractText(heading))
-			if heading.Level == 2 && (strings.EqualFold(text, sectionName) || strings.EqualFold(text, sectionName+"s") || strings.EqualFold(text, "Optional "+sectionName) || strings.EqualFold(text, "Optional "+sectionName+"s")) {
-				inTargetSection = true
-				return ast.GoToNext
-			} else if heading.Level == 2 {
-				inTargetSection = false
-			}
-		}
+    ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+        if heading, ok := node.(*ast.Heading); ok && entering {
+            text := strings.TrimSpace(extractText(heading))
+            if heading.Level == 2 && (strings.EqualFold(text, sectionName) ||
+                                      strings.EqualFold(text, sectionName+"s") ||
+                                      strings.EqualFold(text, "Required "+sectionName) ||
+                                      strings.EqualFold(text, "Required "+sectionName+"s") ||
+                                      strings.EqualFold(text, "Optional "+sectionName) ||
+                                      strings.EqualFold(text, "Optional "+sectionName+"s")) {
+                inTargetSection = true
+                return ast.GoToNext
+            } else if heading.Level == 2 {
+                inTargetSection = false
+            }
+        }
 
-		if inTargetSection && entering {
-			if heading, ok := node.(*ast.Heading); ok && heading.Level == 3 {
-				headingText := strings.TrimSpace(extractText(heading))
-				if strings.HasPrefix(headingText, "<a name=\"input_") {
-					parts := strings.Split(headingText, "\"")
-					if len(parts) >= 2 {
-						varName := strings.TrimPrefix(parts[1], "input_")
-						items = append(items, varName)
-					}
-				}
-			}
-		}
+        if inTargetSection && entering {
+            if heading, ok := node.(*ast.Heading); ok && heading.Level == 3 {
+                headingText := strings.TrimSpace(extractText(heading))
+                if strings.Contains(headingText, "input_") || strings.Contains(headingText, "output_") {
+                    parts := strings.Split(headingText, "]")
+                    if len(parts) > 1 {
+                        itemName := strings.TrimSpace(parts[1])
+                        itemName = strings.Trim(itemName, "[]")
+                        items = append(items, itemName)
+                    }
+                }
+            }
+        }
 
-		return ast.GoToNext
-	})
+        return ast.GoToNext
+    })
 
-	return items, nil
+    return items, nil
 }
 
 //package main
