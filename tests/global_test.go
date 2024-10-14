@@ -669,32 +669,39 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
 	return items, nil
 }
 
-func extractTerraformItems(filePath string, itemType string) ([]string, error) {
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("error reading file %s: %v", filepath.Base(filePath), err)
-	}
+func extractTerraformItems(filePath string, blockType string) ([]string, error) {
+    content, err := os.ReadFile(filePath)
+    if err != nil {
+        return nil, fmt.Errorf("error reading file %s: %v", filepath.Base(filePath), err)
+    }
 
-	var items []string
-	var re *regexp.Regexp
+    parser := hclparse.NewParser()
+    file, diags := parser.ParseHCL(content, filePath)
+    if diags.HasErrors() {
+        return nil, fmt.Errorf("error parsing HCL in %s: %v", filepath.Base(filePath), diags)
+    }
 
-	if itemType == "variable" {
-		re = regexp.MustCompile(`variable\s+"(\w+)"`)
-	} else if itemType == "output" {
-		re = regexp.MustCompile(`output\s+"(\w+)"`)
-	} else {
-		return nil, fmt.Errorf("unsupported item type: %s", itemType)
-	}
+    var items []string
+    body := file.Body
 
-	matches := re.FindAllStringSubmatch(string(content), -1)
-	for _, match := range matches {
-		if len(match) > 1 {
-			items = append(items, match[1])
-		}
-	}
+    bodyContent, bodyDiags := body.Content(&hcl.BodySchema{
+        Blocks: []hcl.BlockHeaderSchema{
+            {Type: blockType, LabelNames: []string{"name"}},
+        },
+    })
 
-	return items, nil
+    diags = append(diags, bodyDiags...)
+    if diags.HasErrors() {
+        return nil, fmt.Errorf("error getting content from %s: %v", filepath.Base(filePath), diags)
+    }
 
+    for _, block := range bodyContent.Blocks {
+        if len(block.Labels) > 0 {
+            items = append(items, block.Labels[0])
+        }
+    }
+
+    return items, nil
 }
 
 func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
@@ -725,59 +732,81 @@ func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []e
 }
 
 func ValidateInputsAndOutputs(readmePath, variablesPath, outputsPath string) []error {
-	var errors []error
+    var errors []error
 
-	// Read and parse README.md
-	readmeContent, err := os.ReadFile(readmePath)
-	if err != nil {
-		return []error{fmt.Errorf("failed to read README: %v", err)}
-	}
+    // Read and parse README.md
+    readmeContent, err := os.ReadFile(readmePath)
+    if err != nil {
+        return []error{fmt.Errorf("failed to read README: %v", err)}
+    }
 
-	// Extract inputs from markdown
-	mdInputs, err := extractMarkdownSectionItems(string(readmeContent), "Inputs")
-	if err != nil {
-		errors = append(errors, err)
-	}
+    // Extract inputs from markdown
+    mdInputs, err := extractMarkdownSectionItems(string(readmeContent), "Inputs")
+    if err != nil {
+        errors = append(errors, err)
+    }
 
-	// Extract outputs from markdown
-	mdOutputs, err := extractMarkdownSectionItems(string(readmeContent), "Outputs")
-	if err != nil {
-		errors = append(errors, err)
-	}
+    // Extract outputs from markdown
+    mdOutputs, err := extractMarkdownSectionItems(string(readmeContent), "Outputs")
+    if err != nil {
+        errors = append(errors, err)
+    }
 
-	// Extract variables from Terraform
-	tfInputs, err := extractTerraformItems(variablesPath, "variable")
-	if err != nil {
-		errors = append(errors, err)
-	}
+    // Extract variables from Terraform
+    tfInputs, err := extractTerraformItems(variablesPath, "variable")
+    if err != nil {
+        errors = append(errors, err)
+    }
 
-	// Extract outputs from Terraform
-	tfOutputs, err := extractTerraformItems(outputsPath, "output")
-	if err != nil {
-		errors = append(errors, err)
-	}
+    // Extract outputs from Terraform
+    tfOutputs, err := extractTerraformItems(outputsPath, "output")
+    if err != nil {
+        errors = append(errors, err)
+    }
 
-	// Compare inputs
-	errors = append(errors, compareTerraformAndMarkdown(tfInputs, mdInputs, "Input")...)
+    // Compare inputs
+    errors = append(errors, compareTerraformAndMarkdown(tfInputs, mdInputs, "Input")...)
 
-	// Compare outputs
-	errors = append(errors, compareTerraformAndMarkdown(tfOutputs, mdOutputs, "Output")...)
+    // Compare outputs
+    errors = append(errors, compareTerraformAndMarkdown(tfOutputs, mdOutputs, "Output")...)
 
-	return errors
+    return errors
 }
 
 func TestInputsAndOutputs(t *testing.T) {
-	readmePath := "README.md"
-	variablesPath := "variables.tf"
-	outputsPath := "outputs.tf"
+    workspace := os.Getenv("GITHUB_WORKSPACE")
+    if workspace == "" {
+        var err error
+        workspace, err = os.Getwd()
+        if err != nil {
+            t.Fatalf("Failed to get current working directory: %v", err)
+        }
+    }
 
-	errors := ValidateInputsAndOutputs(readmePath, variablesPath, outputsPath)
-	if len(errors) > 0 {
-		for _, err := range errors {
-			t.Errorf("Validation error: %v", err)
-		}
-	}
+    readmePath := filepath.Join(workspace, "README.md")
+    variablesPath := filepath.Join(workspace, "variables.tf")
+    outputsPath := filepath.Join(workspace, "outputs.tf")
+
+    errors := ValidateInputsAndOutputs(readmePath, variablesPath, outputsPath)
+    if len(errors) > 0 {
+        for _, err := range errors {
+            t.Errorf("Validation error: %v", err)
+        }
+    }
 }
+
+//func TestInputsAndOutputs(t *testing.T) {
+	//readmePath := "README.md"
+	//variablesPath := "variables.tf"
+	//outputsPath := "outputs.tf"
+
+	//errors := ValidateInputsAndOutputs(readmePath, variablesPath, outputsPath)
+	//if len(errors) > 0 {
+		//for _, err := range errors {
+			//t.Errorf("Validation error: %v", err)
+		//}
+	//}
+//}
 
 // TestMarkdown runs the markdown validation tests
 //func TestMarkdown(t *testing.T) {
