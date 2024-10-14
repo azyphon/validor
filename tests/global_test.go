@@ -94,6 +94,7 @@ func NewSectionValidator(data string) *SectionValidator {
 		{Header: "Providers"},
 		{Header: "Requirements"},
 		{Header: "Inputs"},
+		{Header: "Optional Inputs"},
 		{Header: "Outputs"},
 		{Header: "Testing"},
 	}
@@ -412,78 +413,6 @@ func extractTerraformItems(filePath string, blockType string) ([]string, error) 
 	return items, nil
 }
 
-// extractMarkdownSectionItems extracts items from a markdown section
-func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
-	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-	p := parser.NewWithExtensions(extensions)
-	rootNode := p.Parse([]byte(data))
-
-	var items []string
-	var inTargetSection bool
-
-	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-		if heading, ok := node.(*ast.Heading); ok && entering {
-			text := strings.TrimSpace(extractText(heading))
-			if heading.Level == 2 && (strings.EqualFold(text, sectionName) || strings.EqualFold(text, sectionName+"s")) {
-				inTargetSection = true
-				return ast.GoToNext
-			} else if heading.Level == 2 {
-				inTargetSection = false
-			} else if heading.Level == 3 && inTargetSection {
-				items = append(items, strings.Trim(text, "[]"))
-			}
-		}
-		return ast.GoToNext
-	})
-
-	if len(items) == 0 {
-		return nil, fmt.Errorf("%s section not found or empty", sectionName)
-	}
-
-	return items, nil
-}
-
-// extractReadmeResources extracts resources and data sources from the markdown
-func extractReadmeResources(data string) ([]string, []string, error) {
-	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-	p := parser.NewWithExtensions(extensions)
-	rootNode := p.Parse([]byte(data))
-
-	var resources []string
-	var dataSources []string
-	var inResourcesSection bool
-
-	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-		if heading, ok := node.(*ast.Heading); ok && entering {
-			text := strings.TrimSpace(extractText(heading))
-			if heading.Level == 2 && strings.EqualFold(text, "Resources") {
-				inResourcesSection = true
-				return ast.GoToNext
-			} else if heading.Level == 2 {
-				inResourcesSection = false
-			}
-		}
-
-		if inResourcesSection && entering {
-			if link, ok := node.(*ast.Link); ok {
-				linkText := extractText(link)
-				if strings.Contains(linkText, "azurerm_") {
-					resourceName := strings.Split(linkText, "]")[0]
-					resourceName = strings.TrimPrefix(resourceName, "[")
-					resources = append(resources, resourceName)
-				}
-			}
-		}
-		return ast.GoToNext
-	})
-
-	if len(resources) == 0 && len(dataSources) == 0 {
-		return nil, nil, errors.New("resources section not found or empty")
-	}
-
-	return resources, dataSources, nil
-}
-
 // extractText extracts text from a node, including code spans
 func extractText(node ast.Node) string {
 	var sb strings.Builder
@@ -602,6 +531,85 @@ func extractFromFilePath(filePath string) ([]string, []string, error) {
 	}
 
 	return resources, dataSources, nil
+}
+
+func extractReadmeResources(data string) ([]string, []string, error) {
+    extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+    p := parser.NewWithExtensions(extensions)
+    rootNode := p.Parse([]byte(data))
+
+    var resources []string
+    var dataSources []string
+    inResourceSection := false
+
+    ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
+        if heading, ok := n.(*ast.Heading); ok && entering {
+            headingText := extractText(heading)
+            if strings.Contains(headingText, "Resources") {
+                inResourceSection = true
+            } else if heading.Level <= 2 {
+                inResourceSection = false
+            }
+        }
+
+        if inResourceSection {
+            if link, ok := n.(*ast.Link); ok && entering {
+                linkText := extractText(link)
+                if strings.Contains(linkText, "azurerm_") {
+                    resourceName := strings.Split(linkText, "]")[0]
+                    resourceName = strings.TrimPrefix(resourceName, "[")
+                    resources = append(resources, resourceName)
+                    // Also add the resource without the symbolic name
+                    baseResourceName := strings.Split(resourceName, ".")[0]
+                    if baseResourceName != resourceName {
+                        resources = append(resources, baseResourceName)
+                    }
+                }
+            }
+        }
+        return ast.GoToNext
+    })
+
+    if len(resources) == 0 && len(dataSources) == 0 {
+        return nil, nil, errors.New("resources section not found or empty")
+    }
+
+    return resources, dataSources, nil
+}
+
+// Update the extractMarkdownSectionItems function
+func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
+    extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+    p := parser.NewWithExtensions(extensions)
+    rootNode := p.Parse([]byte(data))
+
+    var items []string
+    currentSection := ""
+
+    ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
+        if heading, ok := n.(*ast.Heading); ok && entering {
+            headingText := strings.TrimSpace(extractText(heading))
+            if heading.Level == 2 {
+                if strings.EqualFold(headingText, sectionName) ||
+                   strings.EqualFold(headingText, "Required "+sectionName) ||
+                   strings.EqualFold(headingText, "Optional "+sectionName) {
+                    currentSection = headingText
+                } else {
+                    currentSection = ""
+                }
+            } else if heading.Level == 3 && strings.Contains(currentSection, sectionName) {
+                inputName := strings.Trim(headingText, " []")
+                items = append(items, inputName)
+            }
+        }
+        return ast.GoToNext
+    })
+
+    if len(items) == 0 {
+        return nil, fmt.Errorf("%s section not found or empty", sectionName)
+    }
+
+    return items, nil
 }
 
 // TestMarkdown runs the markdown validation tests
