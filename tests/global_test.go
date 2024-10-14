@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"regexp"
 
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/ast"
@@ -392,40 +391,40 @@ func findMissingItems(a, b []string) []string {
 }
 
 // extractTerraformItems extracts item names from a Terraform file given the block type
-//func extractTerraformItems(filePath string, blockType string) ([]string, error) {
-	//content, err := os.ReadFile(filePath)
-	//if err != nil {
-		//return nil, fmt.Errorf("error reading file %s: %v", filepath.Base(filePath), err)
-	//}
+func extractTerraformItems(filePath string, blockType string) ([]string, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("error reading file %s: %v", filepath.Base(filePath), err)
+	}
 
-	//parser := hclparse.NewParser()
-	//file, parseDiags := parser.ParseHCL(content, filePath)
-	//if parseDiags.HasErrors() {
-		//return nil, fmt.Errorf("error parsing HCL in %s: %v", filepath.Base(filePath), parseDiags)
-	//}
+	parser := hclparse.NewParser()
+	file, parseDiags := parser.ParseHCL(content, filePath)
+	if parseDiags.HasErrors() {
+		return nil, fmt.Errorf("error parsing HCL in %s: %v", filepath.Base(filePath), parseDiags)
+	}
 
-	//var items []string
-	//body := file.Body
+	var items []string
+	body := file.Body
 
-	//hclContent, _, _ := body.PartialContent(&hcl.BodySchema{
-		//Blocks: []hcl.BlockHeaderSchema{
-			//{Type: blockType, LabelNames: []string{"name"}},
-		//},
-	//})
+	hclContent, _, _ := body.PartialContent(&hcl.BodySchema{
+		Blocks: []hcl.BlockHeaderSchema{
+			{Type: blockType, LabelNames: []string{"name"}},
+		},
+	})
 
-	//if hclContent == nil {
-		//return items, nil
-	//}
+	if hclContent == nil {
+		return items, nil
+	}
 
-	//for _, block := range hclContent.Blocks {
-		//if len(block.Labels) > 0 {
-			//itemName := strings.TrimSpace(block.Labels[0])
-			//items = append(items, itemName)
-		//}
-	//}
+	for _, block := range hclContent.Blocks {
+		if len(block.Labels) > 0 {
+			itemName := strings.TrimSpace(block.Labels[0])
+			items = append(items, itemName)
+		}
+	}
 
-	//return items, nil
-//}
+	return items, nil
+}
 
 // extractText extracts text from a node, including code spans
 func extractText(node ast.Node) string {
@@ -554,39 +553,39 @@ func extractFromFilePath(filePath string) ([]string, []string, error) {
 }
 
 // Update the extractMarkdownSectionItems function
-//func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
-	//extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-	//p := parser.NewWithExtensions(extensions)
-	//rootNode := p.Parse([]byte(data))
+func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
+	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+	p := parser.NewWithExtensions(extensions)
+	rootNode := p.Parse([]byte(data))
 
-	//var items []string
-	//currentSection := ""
+	var items []string
+	currentSection := ""
 
-	//ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
-		//if heading, ok := n.(*ast.Heading); ok && entering {
-			//headingText := strings.TrimSpace(extractText(heading))
-			//if heading.Level == 2 {
-				//if strings.EqualFold(headingText, sectionName) ||
-					//strings.EqualFold(headingText, "Required "+sectionName) ||
-					//strings.EqualFold(headingText, "Optional "+sectionName) {
-					//currentSection = headingText
-				//} else {
-					//currentSection = ""
-				//}
-			//} else if heading.Level == 3 && strings.Contains(currentSection, sectionName) {
-				//inputName := strings.Trim(headingText, " []")
-				//items = append(items, inputName)
-			//}
-		//}
-		//return ast.GoToNext
-	//})
+	ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
+		if heading, ok := n.(*ast.Heading); ok && entering {
+			headingText := strings.TrimSpace(extractText(heading))
+			if heading.Level == 2 {
+				if strings.EqualFold(headingText, sectionName) ||
+					strings.EqualFold(headingText, "Required "+sectionName) ||
+					strings.EqualFold(headingText, "Optional "+sectionName) {
+					currentSection = headingText
+				} else {
+					currentSection = ""
+				}
+			} else if heading.Level == 3 && strings.Contains(currentSection, sectionName) {
+				inputName := strings.Trim(headingText, " []")
+				items = append(items, inputName)
+			}
+		}
+		return ast.GoToNext
+	})
 
-	//if len(items) == 0 {
-		//return nil, fmt.Errorf("%s section not found or empty", sectionName)
-	//}
+	if len(items) == 0 {
+		return nil, fmt.Errorf("%s section not found or empty", sectionName)
+	}
 
-	//return items, nil
-//}
+	return items, nil
+}
 
 func extractReadmeResources(data string) ([]string, []string, error) {
     extensions := parser.CommonExtensions | parser.AutoHeadingIDs
@@ -660,70 +659,6 @@ func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []e
     }
 
     return errors
-}
-
-func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
-    extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-    p := parser.NewWithExtensions(extensions)
-    rootNode := p.Parse([]byte(data))
-
-    var items []string
-    inTargetSection := false
-
-    ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
-        if heading, ok := n.(*ast.Heading); ok && entering {
-            headingText := strings.TrimSpace(extractText(heading))
-            if heading.Level == 2 && (strings.EqualFold(headingText, sectionName) ||
-                                      strings.EqualFold(headingText, "Required "+sectionName) ||
-                                      strings.EqualFold(headingText, "Optional "+sectionName)) {
-                inTargetSection = true
-            } else if heading.Level == 2 {
-                inTargetSection = false
-            } else if inTargetSection && heading.Level == 3 {
-                // Extract the variable or output name
-                nameMatch := regexp.MustCompile(`\[(\w+)\]`).FindStringSubmatch(headingText)
-                if len(nameMatch) > 1 {
-                    items = append(items, nameMatch[1])
-                }
-            }
-        }
-        return ast.GoToNext
-    })
-
-    if len(items) == 0 {
-        return nil, fmt.Errorf("%s section not found or empty", sectionName)
-    }
-
-    return items, nil
-}
-
-func extractTerraformItems(filePath string, itemType string) ([]string, error) {
-    content, err := os.ReadFile(filePath)
-    if err != nil {
-        return nil, fmt.Errorf("error reading file %s: %v", filepath.Base(filePath), err)
-    }
-
-    var items []string
-    var re *regexp.Regexp
-
-    if itemType == "variable" {
-        re = regexp.MustCompile(`variable\s+"(\w+)"`)
-    } else if itemType == "output" {
-        re = regexp.MustCompile(`output\s+"(\w+)"`)
-    } else {
-        return nil, fmt.Errorf("unsupported item type: %s", itemType)
-    }
-
-    matches := re.FindAllStringSubmatch(string(content), -1)
-    for _, match := range matches {
-        if len(match) > 1 {
-            items = append(items, match[1])
-        }
-    }
-
-    return items, nil
-
-
 }
 
 
