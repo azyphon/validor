@@ -774,38 +774,64 @@ func ValidateInputsAndOutputs(readmePath, variablesPath, outputsPath string) []e
 }
 
 func TestInputsAndOutputs(t *testing.T) {
-    // Get the current working directory
-    currentDir, err := os.Getwd()
+    readmePath := "README.md"
+    variablesPath := "variables.tf"
+    outputsPath := "outputs.tf"
+
+    // Use README_PATH environment variable if set
+    if envPath := os.Getenv("README_PATH"); envPath != "" {
+        readmePath = envPath
+        // Assume variables.tf and outputs.tf are in the same directory as README.md
+        dir := filepath.Dir(envPath)
+        variablesPath = filepath.Join(dir, "variables.tf")
+        outputsPath = filepath.Join(dir, "outputs.tf")
+    }
+
+    // Validate inputs
+    mdInputs, err := extractMarkdownSectionItems(readmePath, "Inputs")
     if err != nil {
-        t.Fatalf("Failed to get current working directory: %v", err)
+        t.Errorf("Failed to extract inputs from markdown: %v", err)
     }
-
-    // Assuming the test is run from the 'tests' directory, go up two levels to the project root
-    projectRoot := filepath.Join(currentDir, "../..")
-
-    readmePath := filepath.Join(projectRoot, "README.md")
-    variablesPath := filepath.Join(projectRoot, "variables.tf")
-    outputsPath := filepath.Join(projectRoot, "outputs.tf")
-
-    if !fileExists(readmePath) || !fileExists(variablesPath) || !fileExists(outputsPath) {
-        t.Fatalf("Could not find necessary files. Project root: %s\nREADME.md: %s\nvariables.tf: %s\noutputs.tf: %s",
-            projectRoot,
-            readmePath,
-            variablesPath,
-            outputsPath)
+    tfInputs, err := extractTerraformItems(variablesPath, "variable")
+    if err != nil {
+        t.Errorf("Failed to extract inputs from Terraform: %v", err)
     }
+    compareItems(t, tfInputs, mdInputs, "Input")
 
-    errors := ValidateInputsAndOutputs(readmePath, variablesPath, outputsPath)
-    if len(errors) > 0 {
-        for _, err := range errors {
-            t.Errorf("Validation error: %v", err)
-        }
+    // Validate outputs
+    mdOutputs, err := extractMarkdownSectionItems(readmePath, "Outputs")
+    if err != nil {
+        t.Errorf("Failed to extract outputs from markdown: %v", err)
     }
+    tfOutputs, err := extractTerraformItems(outputsPath, "output")
+    if err != nil {
+        t.Errorf("Failed to extract outputs from Terraform: %v", err)
+    }
+    compareItems(t, tfOutputs, mdOutputs, "Output")
 }
 
-func fileExists(filename string) bool {
-    _, err := os.Stat(filename)
-    return err == nil
+func compareItems(t *testing.T, tfItems, mdItems []string, itemType string) {
+    tfSet := make(map[string]bool)
+    mdSet := make(map[string]bool)
+
+    for _, item := range tfItems {
+        tfSet[item] = true
+    }
+    for _, item := range mdItems {
+        mdSet[item] = true
+    }
+
+    for _, tfItem := range tfItems {
+        if !mdSet[tfItem] {
+            t.Errorf("%s in Terraform but missing in markdown: %s", itemType, tfItem)
+        }
+    }
+
+    for _, mdItem := range mdItems {
+        if !tfSet[mdItem] {
+            t.Errorf("%s in markdown but missing in Terraform: %s", itemType, mdItem)
+        }
+    }
 }
 
 //func TestInputsAndOutputs(t *testing.T) {
