@@ -774,28 +774,22 @@ func ValidateInputsAndOutputs(readmePath, variablesPath, outputsPath string) []e
 }
 
 func TestInputsAndOutputs(t *testing.T) {
-    // Try different possible locations for the files
-    possiblePaths := []string{
-        ".",
-        "..",
-        "../..",
-        os.Getenv("GITHUB_WORKSPACE"),
+    // Get the current working directory
+    currentDir, err := os.Getwd()
+    if err != nil {
+        t.Fatalf("Failed to get current working directory: %v", err)
     }
 
-    var readmePath, variablesPath, outputsPath string
-    for _, basePath := range possiblePaths {
-        readmePath = filepath.Join(basePath, "README.md")
-        variablesPath = filepath.Join(basePath, "variables.tf")
-        outputsPath = filepath.Join(basePath, "outputs.tf")
+    // Assuming the test is run from the 'tests' directory, go up two levels to the project root
+    projectRoot := filepath.Join(currentDir, "../..")
 
-        if fileExists(readmePath) && fileExists(variablesPath) && fileExists(outputsPath) {
-            break
-        }
-    }
+    readmePath := filepath.Join(projectRoot, "README.md")
+    variablesPath := filepath.Join(projectRoot, "variables.tf")
+    outputsPath := filepath.Join(projectRoot, "outputs.tf")
 
     if !fileExists(readmePath) || !fileExists(variablesPath) || !fileExists(outputsPath) {
-        t.Fatalf("Could not find necessary files. Current directory: %s\nREADME.md: %s\nvariables.tf: %s\noutputs.tf: %s",
-            getCurrentDir(),
+        t.Fatalf("Could not find necessary files. Project root: %s\nREADME.md: %s\nvariables.tf: %s\noutputs.tf: %s",
+            projectRoot,
             readmePath,
             variablesPath,
             outputsPath)
@@ -812,14 +806,6 @@ func TestInputsAndOutputs(t *testing.T) {
 func fileExists(filename string) bool {
     _, err := os.Stat(filename)
     return err == nil
-}
-
-func getCurrentDir() string {
-    dir, err := os.Getwd()
-    if err != nil {
-        return "unknown"
-    }
-    return dir
 }
 
 //func TestInputsAndOutputs(t *testing.T) {
