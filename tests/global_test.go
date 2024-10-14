@@ -552,44 +552,44 @@ func extractFromFilePath(filePath string) ([]string, []string, error) {
     return resources, dataSources, nil
 }
 
-func extractReadmeResources(data string) ([]string, []string, error) {
-    extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-    p := parser.NewWithExtensions(extensions)
-    rootNode := p.Parse([]byte(data))
+//func extractReadmeResources(data string) ([]string, []string, error) {
+    //extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+    //p := parser.NewWithExtensions(extensions)
+    //rootNode := p.Parse([]byte(data))
 
-    var resources []string
-    var dataSources []string
-    inResourceSection := false
+    //var resources []string
+    //var dataSources []string
+    //inResourceSection := false
 
-    ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
-        if heading, ok := n.(*ast.Heading); ok && entering {
-            headingText := extractText(heading)
-            if strings.Contains(headingText, "Resources") {
-                inResourceSection = true
-            } else if heading.Level <= 2 {
-                inResourceSection = false
-            }
-        }
+    //ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
+        //if heading, ok := n.(*ast.Heading); ok && entering {
+            //headingText := extractText(heading)
+            //if strings.Contains(headingText, "Resources") {
+                //inResourceSection = true
+            //} else if heading.Level <= 2 {
+                //inResourceSection = false
+            //}
+        //}
 
-        if inResourceSection {
-            if link, ok := n.(*ast.Link); ok && entering {
-                linkText := extractText(link)
-                if strings.Contains(linkText, "azurerm_") {
-                    resourceName := strings.Split(linkText, "]")[0]
-                    resourceName = strings.TrimPrefix(resourceName, "[")
-                    resources = append(resources, resourceName)
-                }
-            }
-        }
-        return ast.GoToNext
-    })
+        //if inResourceSection {
+            //if link, ok := n.(*ast.Link); ok && entering {
+                //linkText := extractText(link)
+                //if strings.Contains(linkText, "azurerm_") {
+                    //resourceName := strings.Split(linkText, "]")[0]
+                    //resourceName = strings.TrimPrefix(resourceName, "[")
+                    //resources = append(resources, resourceName)
+                //}
+            //}
+        //}
+        //return ast.GoToNext
+    //})
 
-    if len(resources) == 0 && len(dataSources) == 0 {
-        return nil, nil, errors.New("resources section not found or empty")
-    }
+    //if len(resources) == 0 && len(dataSources) == 0 {
+        //return nil, nil, errors.New("resources section not found or empty")
+    //}
 
-    return resources, dataSources, nil
-}
+    //return resources, dataSources, nil
+//}
 
 // Update the extractMarkdownSectionItems function
 func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
@@ -626,6 +626,78 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
 	return items, nil
 }
 
+//func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
+    //var errors []error
+    //tfSet := make(map[string]bool)
+    //mdSet := make(map[string]bool)
+
+    //for _, item := range tfItems {
+        //tfSet[item] = true
+    //}
+    //for _, item := range mdItems {
+        //mdSet[item] = true
+    //}
+
+    //for _, tfItem := range tfItems {
+        //if !mdSet[tfItem] && !mdSet[strings.Split(tfItem, ".")[0]] {
+            //errors = append(errors, formatError("%s in Terraform but missing in markdown: %s", itemType, tfItem))
+        //}
+    //}
+
+    //for _, mdItem := range mdItems {
+        //if !tfSet[mdItem] && !tfSet[strings.Split(mdItem, ".")[0]] {
+            //errors = append(errors, formatError("%s in markdown but missing in Terraform: %s", itemType, mdItem))
+        //}
+    //}
+
+    //return errors
+//}
+
+func extractReadmeResources(data string) ([]string, []string, error) {
+    extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+    p := parser.NewWithExtensions(extensions)
+    rootNode := p.Parse([]byte(data))
+
+    var resources []string
+    var dataSources []string
+    inResourceSection := false
+
+    ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
+        if heading, ok := n.(*ast.Heading); ok && entering {
+            headingText := extractText(heading)
+            if strings.Contains(headingText, "Resources") {
+                inResourceSection = true
+            } else if heading.Level <= 2 {
+                inResourceSection = false
+            }
+        }
+
+        if inResourceSection && entering {
+            if link, ok := n.(*ast.Link); ok {
+                linkText := extractText(link)
+                if strings.Contains(linkText, "azurerm_") {
+                    resourceName := strings.Split(linkText, "]")[0]
+                    resourceName = strings.TrimPrefix(resourceName, "[")
+                    resources = append(resources, resourceName)
+
+                    // Also add the base resource type without the symbolic name
+                    baseName := strings.Split(resourceName, ".")[0]
+                    if baseName != resourceName {
+                        resources = append(resources, baseName)
+                    }
+                }
+            }
+        }
+        return ast.GoToNext
+    })
+
+    if len(resources) == 0 && len(dataSources) == 0 {
+        return nil, nil, errors.New("resources section not found or empty")
+    }
+
+    return resources, dataSources, nil
+}
+
 func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
     var errors []error
     tfSet := make(map[string]bool)
@@ -633,9 +705,11 @@ func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []e
 
     for _, item := range tfItems {
         tfSet[item] = true
+        tfSet[strings.Split(item, ".")[0]] = true  // Also add the base resource type
     }
     for _, item := range mdItems {
         mdSet[item] = true
+        mdSet[strings.Split(item, ".")[0]] = true  // Also add the base resource type
     }
 
     for _, tfItem := range tfItems {
