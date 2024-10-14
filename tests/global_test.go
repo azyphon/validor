@@ -633,6 +633,35 @@ func extractReadmeResources(data string) ([]string, []string, error) {
     return resources, dataSources, nil
 }
 
+func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
+    var errors []error
+    tfSet := make(map[string]bool)
+    mdSet := make(map[string]bool)
+
+    for _, item := range tfItems {
+        tfSet[item] = true
+        tfSet[strings.Split(item, ".")[0]] = true  // Also add the base resource type
+    }
+    for _, item := range mdItems {
+        mdSet[item] = true
+        mdSet[strings.Split(item, ".")[0]] = true  // Also add the base resource type
+    }
+
+    for _, tfItem := range tfItems {
+        if !mdSet[tfItem] && !mdSet[strings.Split(tfItem, ".")[0]] {
+            errors = append(errors, formatError("%s in Terraform but missing in markdown: %s", itemType, tfItem))
+        }
+    }
+
+    for _, mdItem := range mdItems {
+        if !tfSet[mdItem] && !tfSet[strings.Split(mdItem, ".")[0]] {
+            errors = append(errors, formatError("%s in markdown but missing in Terraform: %s", itemType, mdItem))
+        }
+    }
+
+    return errors
+}
+
 func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
     extensions := parser.CommonExtensions | parser.AutoHeadingIDs
     p := parser.NewWithExtensions(extensions)
@@ -697,32 +726,7 @@ func extractTerraformItems(filePath string, itemType string) ([]string, error) {
 
 }
 
-func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
-    var errors []error
-    tfSet := make(map[string]bool)
-    mdSet := make(map[string]bool)
 
-    for _, item := range tfItems {
-        tfSet[item] = true
-    }
-    for _, item := range mdItems {
-        mdSet[item] = true
-    }
-
-    for _, tfItem := range tfItems {
-        if !mdSet[tfItem] {
-            errors = append(errors, fmt.Errorf("%s in Terraform but missing in markdown: %s", itemType, tfItem))
-        }
-    }
-
-    for _, mdItem := range mdItems {
-        if !tfSet[mdItem] {
-            errors = append(errors, fmt.Errorf("%s in markdown but missing in Terraform: %s", itemType, mdItem))
-        }
-    }
-
-    return errors
-}
 
 // TestMarkdown runs the markdown validation tests
 func TestMarkdown(t *testing.T) {
