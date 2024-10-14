@@ -774,18 +774,32 @@ func ValidateInputsAndOutputs(readmePath, variablesPath, outputsPath string) []e
 }
 
 func TestInputsAndOutputs(t *testing.T) {
-    workspace := os.Getenv("GITHUB_WORKSPACE")
-    if workspace == "" {
-        var err error
-        workspace, err = os.Getwd()
-        if err != nil {
-            t.Fatalf("Failed to get current working directory: %v", err)
+    // Try different possible locations for the files
+    possiblePaths := []string{
+        ".",
+        "..",
+        "../..",
+        os.Getenv("GITHUB_WORKSPACE"),
+    }
+
+    var readmePath, variablesPath, outputsPath string
+    for _, basePath := range possiblePaths {
+        readmePath = filepath.Join(basePath, "README.md")
+        variablesPath = filepath.Join(basePath, "variables.tf")
+        outputsPath = filepath.Join(basePath, "outputs.tf")
+
+        if fileExists(readmePath) && fileExists(variablesPath) && fileExists(outputsPath) {
+            break
         }
     }
 
-    readmePath := filepath.Join(workspace, "README.md")
-    variablesPath := filepath.Join(workspace, "variables.tf")
-    outputsPath := filepath.Join(workspace, "outputs.tf")
+    if !fileExists(readmePath) || !fileExists(variablesPath) || !fileExists(outputsPath) {
+        t.Fatalf("Could not find necessary files. Current directory: %s\nREADME.md: %s\nvariables.tf: %s\noutputs.tf: %s",
+            getCurrentDir(),
+            readmePath,
+            variablesPath,
+            outputsPath)
+    }
 
     errors := ValidateInputsAndOutputs(readmePath, variablesPath, outputsPath)
     if len(errors) > 0 {
@@ -794,6 +808,41 @@ func TestInputsAndOutputs(t *testing.T) {
         }
     }
 }
+
+func fileExists(filename string) bool {
+    _, err := os.Stat(filename)
+    return err == nil
+}
+
+func getCurrentDir() string {
+    dir, err := os.Getwd()
+    if err != nil {
+        return "unknown"
+    }
+    return dir
+}
+
+//func TestInputsAndOutputs(t *testing.T) {
+    //workspace := os.Getenv("GITHUB_WORKSPACE")
+    //if workspace == "" {
+        //var err error
+        //workspace, err = os.Getwd()
+        //if err != nil {
+            //t.Fatalf("Failed to get current working directory: %v", err)
+        //}
+    //}
+
+    //readmePath := filepath.Join(workspace, "README.md")
+    //variablesPath := filepath.Join(workspace, "variables.tf")
+    //outputsPath := filepath.Join(workspace, "outputs.tf")
+
+    //errors := ValidateInputsAndOutputs(readmePath, variablesPath, outputsPath)
+    //if len(errors) > 0 {
+        //for _, err := range errors {
+            //t.Errorf("Validation error: %v", err)
+        //}
+    //}
+//}
 
 //func TestInputsAndOutputs(t *testing.T) {
 	//readmePath := "README.md"
