@@ -25,56 +25,157 @@ type Validator interface {
 
 // MarkdownValidator orchestrates all validations
 type MarkdownValidator struct {
-	readmePath string
-	data       string
-	validators []Validator
+    readmePath    string
+    data          string
+    validators    []Validator
+    foundSections map[string]bool
+}
+//type MarkdownValidator struct {
+    //readmePath string
+    //data       string
+    //validators []Validator
+    //foundSections map[string]bool
+//}
+//type MarkdownValidator struct {
+	//readmePath string
+	//data       string
+	//validators []Validator
+//}
+
+type SectionValidator struct {
+    data     string
+    sections []string
+    rootNode ast.Node
 }
 
 func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
-	if envPath := os.Getenv("README_PATH"); envPath != "" {
-		readmePath = envPath
-	}
+    if envPath := os.Getenv("README_PATH"); envPath != "" {
+        readmePath = envPath
+    }
+    absReadmePath, err := filepath.Abs(readmePath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to get absolute path: %v", err)
+    }
+    data, err := os.ReadFile(absReadmePath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read file: %v", err)
+    }
+    mv := &MarkdownValidator{
+        readmePath:    absReadmePath,
+        data:          string(data),
+        foundSections: make(map[string]bool),
+    }
 
-	absReadmePath, err := filepath.Abs(readmePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path: %v", err)
-	}
+    // Create SectionValidator separately to initialize foundSections
+    sectionValidator := NewSectionValidator(mv.data)
+    mv.validators = []Validator{
+        sectionValidator,
+        NewFileValidator(absReadmePath),
+        NewURLValidator(mv.data),
+        NewTerraformDefinitionValidator(mv.data),
+        NewItemValidator(mv.data, "Variables", "variable", "Inputs", "variables.tf"),
+        NewItemValidator(mv.data, "Outputs", "output", "Outputs", "outputs.tf"),
+    }
 
-	data, err := os.ReadFile(absReadmePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %v", err)
-	}
+    // Initialize foundSections
+    for _, section := range sectionValidator.sections {
+        mv.foundSections[section] = sectionValidator.validateSection(section)
+    }
 
-	mv := &MarkdownValidator{
-		readmePath: absReadmePath,
-		data:       string(data),
-	}
-
-	mv.validators = []Validator{
-		NewSectionValidator(mv.data),
-		NewFileValidator(absReadmePath),
-		NewURLValidator(mv.data),
-		NewTerraformDefinitionValidator(mv.data),
-		NewItemValidator(mv.data, "Variables", "variable", "Inputs", "variables.tf"),
-		NewItemValidator(mv.data, "Outputs", "output", "Outputs", "outputs.tf"),
-	}
-
-	return mv, nil
+    return mv, nil
 }
+//func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
+	//if envPath := os.Getenv("README_PATH"); envPath != "" {
+		//readmePath = envPath
+	//}
+
+	//absReadmePath, err := filepath.Abs(readmePath)
+	//if err != nil {
+		//return nil, fmt.Errorf("failed to get absolute path: %v", err)
+	//}
+
+	//data, err := os.ReadFile(absReadmePath)
+	//if err != nil {
+		//return nil, fmt.Errorf("failed to read file: %v", err)
+	//}
+
+	//mv := &MarkdownValidator{
+		//readmePath: absReadmePath,
+		//data:       string(data),
+	//}
+
+	//mv.validators = []Validator{
+		//NewSectionValidator(mv.data),
+		//NewFileValidator(absReadmePath),
+		//NewURLValidator(mv.data),
+		//NewTerraformDefinitionValidator(mv.data),
+		//NewItemValidator(mv.data, "Variables", "variable", "Inputs", "variables.tf"),
+		//NewItemValidator(mv.data, "Outputs", "output", "Outputs", "outputs.tf"),
+	//}
+
+	//return mv, nil
+//}
+
+//func (mv *MarkdownValidator) Validate() []error {
+	//var allErrors []error
+	//for _, validator := range mv.validators {
+		//allErrors = append(allErrors, validator.Validate()...)
+	//}
+	//return allErrors
+//}
 
 func (mv *MarkdownValidator) Validate() []error {
-	var allErrors []error
-	for _, validator := range mv.validators {
-		allErrors = append(allErrors, validator.Validate()...)
-	}
-	return allErrors
+    var allErrors []error
+    for _, validator := range mv.validators {
+        if itemValidator, ok := validator.(*ItemValidator); ok {
+            // Skip ItemValidator if the section wasn't found
+            if !mv.foundSections[itemValidator.section] {
+                continue
+            }
+        }
+        allErrors = append(allErrors, validator.Validate()...)
+    }
+    return allErrors
 }
 
+//func (mv *MarkdownValidator) Validate() []error {
+    //var allErrors []error
+
+    //// Run SectionValidator first
+    //sectionValidator := NewSectionValidator(mv.data)
+    //foundSections, sectionErrors := sectionValidator.Validate()
+    //mv.foundSections = foundSections
+    //allErrors = append(allErrors, sectionErrors...)
+
+    //// Run other validators
+    //for _, validator := range mv.validators {
+        //if itemValidator, ok := validator.(*ItemValidator); ok {
+            //// Skip ItemValidator if the section wasn't found
+            //if !mv.foundSections[itemValidator.section] {
+                //continue
+            //}
+        //}
+        //allErrors = append(allErrors, validator.Validate()...)
+    //}
+    //return allErrors
+//}
+
 // SectionValidator validates markdown sections
-type SectionValidator struct {
-	data     string
-	sections []string
-	rootNode ast.Node
+//type SectionValidator struct {
+	//data     string
+	//sections []string
+	//rootNode ast.Node
+//}
+
+
+func (sv *SectionValidator) Validate() []error {
+    var allErrors []error
+    for _, section := range sv.sections {
+        if !sv.validateSection(section) {
+            allErrors = append(allErrors, fmt.Errorf("incorrect header: expected '%s', found 'not present'", section))
+        }
+    }
+    return allErrors
 }
 
 func NewSectionValidator(data string) *SectionValidator {
@@ -90,36 +191,71 @@ func NewSectionValidator(data string) *SectionValidator {
 	return &SectionValidator{data: data, sections: sections, rootNode: rootNode}
 }
 
-func (sv *SectionValidator) Validate() []error {
-	var allErrors []error
-	for _, section := range sv.sections {
-		if err := sv.validateSection(section); err != nil {
-			allErrors = append(allErrors, err)
-		}
-	}
-	return allErrors
+
+//func (sv *SectionValidator) Validate() []error {
+	//var allErrors []error
+	//for _, section := range sv.sections {
+		//if err := sv.validateSection(section); err != nil {
+			//allErrors = append(allErrors, err)
+		//}
+	//}
+	//return allErrors
+//}
+
+//func (sv *SectionValidator) validateSection(sectionName string) error {
+	//found := false
+	//ast.WalkFunc(sv.rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+		//if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
+			//text := strings.TrimSpace(extractText(heading))
+			//if strings.EqualFold(text, sectionName) ||
+				//strings.EqualFold(text, sectionName+"s") ||
+				//(sectionName == "Inputs" && (strings.EqualFold(text, "Required Inputs") || strings.EqualFold(text, "Optional Inputs"))) {
+				//found = true
+				//return ast.SkipChildren
+			//}
+		//}
+		//return ast.GoToNext
+	//})
+
+	//if !found {
+		//return fmt.Errorf("incorrect header: expected '%s', found 'not present'", sectionName)
+	//}
+	//return nil
+//}
+
+func (sv *SectionValidator) validateSection(sectionName string) bool {
+    found := false
+    ast.WalkFunc(sv.rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+        if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
+            text := strings.TrimSpace(extractText(heading))
+            if strings.EqualFold(text, sectionName) ||
+                strings.EqualFold(text, sectionName+"s") ||
+                (sectionName == "Inputs" && (strings.EqualFold(text, "Required Inputs") || strings.EqualFold(text, "Optional Inputs"))) {
+                found = true
+                return ast.SkipChildren
+            }
+        }
+        return ast.GoToNext
+    })
+    return found
 }
 
-func (sv *SectionValidator) validateSection(sectionName string) error {
-	found := false
-	ast.WalkFunc(sv.rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
-			text := strings.TrimSpace(extractText(heading))
-			if strings.EqualFold(text, sectionName) ||
-				strings.EqualFold(text, sectionName+"s") ||
-				(sectionName == "Inputs" && (strings.EqualFold(text, "Required Inputs") || strings.EqualFold(text, "Optional Inputs"))) {
-				found = true
-				return ast.SkipChildren
-			}
-		}
-		return ast.GoToNext
-	})
-
-	if !found {
-		return fmt.Errorf("incorrect header: expected '%s', found 'not present'", sectionName)
-	}
-	return nil
-}
+//func (sv *SectionValidator) validateSection(sectionName string) bool {
+    //found := false
+    //ast.WalkFunc(sv.rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+        //if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
+            //text := strings.TrimSpace(extractText(heading))
+            //if strings.EqualFold(text, sectionName) ||
+                //strings.EqualFold(text, sectionName+"s") ||
+                //(sectionName == "Inputs" && (strings.EqualFold(text, "Required Inputs") || strings.EqualFold(text, "Optional Inputs"))) {
+                //found = true
+                //return ast.SkipChildren
+            //}
+        //}
+        //return ast.GoToNext
+    //})
+    //return found
+//}
 
 // FileValidator validates the presence of required files
 type FileValidator struct {
@@ -266,27 +402,47 @@ func NewItemValidator(data, itemType, blockType, section, fileName string) *Item
 }
 
 func (iv *ItemValidator) Validate() []error {
-	workspace := os.Getenv("GITHUB_WORKSPACE")
-	if workspace == "" {
-		var err error
-		workspace, err = os.Getwd()
-		if err != nil {
-			return []error{fmt.Errorf("failed to get current working directory: %v", err)}
-		}
-	}
-	filePath := filepath.Join(workspace, "caller", iv.fileName)
-	tfItems, err := extractTerraformItems(filePath, iv.blockType)
-	if err != nil {
-		return []error{err}
-	}
+    workspace := os.Getenv("GITHUB_WORKSPACE")
+    if workspace == "" {
+        var err error
+        workspace, err = os.Getwd()
+        if err != nil {
+            return []error{fmt.Errorf("failed to get current working directory: %v", err)}
+        }
+    }
+    filePath := filepath.Join(workspace, "caller", iv.fileName)
+    tfItems, err := extractTerraformItems(filePath, iv.blockType)
+    if err != nil {
+        return []error{err}
+    }
 
-	mdItems, err := extractMarkdownSectionItems(iv.data, iv.section)
-	if err != nil {
-		return []error{err}
-	}
+    mdItems := extractMarkdownSectionItems(iv.data, iv.section)
 
-	return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
+    return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
 }
+
+//func (iv *ItemValidator) Validate() []error {
+	//workspace := os.Getenv("GITHUB_WORKSPACE")
+	//if workspace == "" {
+		//var err error
+		//workspace, err = os.Getwd()
+		//if err != nil {
+			//return []error{fmt.Errorf("failed to get current working directory: %v", err)}
+		//}
+	//}
+	//filePath := filepath.Join(workspace, "caller", iv.fileName)
+	//tfItems, err := extractTerraformItems(filePath, iv.blockType)
+	//if err != nil {
+		//return []error{err}
+	//}
+
+	//mdItems, err := extractMarkdownSectionItems(iv.data, iv.section)
+	//if err != nil {
+		//return []error{err}
+	//}
+
+	//return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
+//}
 
 // Helper functions
 
@@ -449,41 +605,71 @@ func extractFromFilePath(filePath string) ([]string, []string, error) {
 	return resources, dataSources, nil
 }
 
-func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
-	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-	p := parser.NewWithExtensions(extensions)
-	rootNode := p.Parse([]byte(data))
+func extractMarkdownSectionItems(data, sectionName string) []string {
+    extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+    p := parser.NewWithExtensions(extensions)
+    rootNode := p.Parse([]byte(data))
 
-	var items []string
-	inTargetSection := false
-	sectionFound := false
+    var items []string
+    inTargetSection := false
 
-	ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
-		if heading, ok := n.(*ast.Heading); ok && entering {
-			headingText := strings.TrimSpace(extractText(heading))
-			if heading.Level == 2 {
-				if strings.EqualFold(headingText, sectionName) ||
-					strings.EqualFold(headingText, "Required "+sectionName) ||
-					strings.EqualFold(headingText, "Optional "+sectionName) {
-					inTargetSection = true
-					sectionFound = true
-				} else if inTargetSection {
-					inTargetSection = false
-				}
-			} else if heading.Level == 3 && inTargetSection {
-				inputName := strings.Trim(headingText, " []")
-				items = append(items, inputName)
-			}
-		}
-		return ast.GoToNext
-	})
+    ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
+        if heading, ok := n.(*ast.Heading); ok && entering {
+            headingText := strings.TrimSpace(extractText(heading))
+            if heading.Level == 2 {
+                if strings.EqualFold(headingText, sectionName) ||
+                   strings.EqualFold(headingText, "Required "+sectionName) ||
+                   strings.EqualFold(headingText, "Optional "+sectionName) {
+                    inTargetSection = true
+                } else if inTargetSection {
+                    inTargetSection = false
+                }
+            } else if heading.Level == 3 && inTargetSection {
+                inputName := strings.Trim(headingText, " []")
+                items = append(items, inputName)
+            }
+        }
+        return ast.GoToNext
+    })
 
-	if !sectionFound {
-		return nil, fmt.Errorf("%s section not found", sectionName)
-	}
-
-	return items, nil
+    return items
 }
+
+//func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
+	//extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+	//p := parser.NewWithExtensions(extensions)
+	//rootNode := p.Parse([]byte(data))
+
+	//var items []string
+	//inTargetSection := false
+	//sectionFound := false
+
+	//ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
+		//if heading, ok := n.(*ast.Heading); ok && entering {
+			//headingText := strings.TrimSpace(extractText(heading))
+			//if heading.Level == 2 {
+				//if strings.EqualFold(headingText, sectionName) ||
+					//strings.EqualFold(headingText, "Required "+sectionName) ||
+					//strings.EqualFold(headingText, "Optional "+sectionName) {
+					//inTargetSection = true
+					//sectionFound = true
+				//} else if inTargetSection {
+					//inTargetSection = false
+				//}
+			//} else if heading.Level == 3 && inTargetSection {
+				//inputName := strings.Trim(headingText, " []")
+				//items = append(items, inputName)
+			//}
+		//}
+		//return ast.GoToNext
+	//})
+
+	//if !sectionFound {
+		//return nil, fmt.Errorf("%s section not found", sectionName)
+	//}
+
+	//return items, nil
+//}
 
 func extractReadmeResources(data string) ([]string, []string, error) {
 	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
