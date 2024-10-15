@@ -90,6 +90,7 @@ type SectionValidator struct {
 func NewSectionValidator(data string) *SectionValidator {
 	sections := []Section{
 		{Header: "Goals"},
+		{Header: "Non Goals"},
 		{Header: "Resources"},
 		{Header: "Providers"},
 		{Header: "Requirements"},
@@ -97,14 +98,6 @@ func NewSectionValidator(data string) *SectionValidator {
 		{Header: "Required Inputs"},
 		{Header: "Outputs"},
 		{Header: "Testing"},
-		//{Header: "Inputs"},
-		//{Header: "Goals"},
-		//{Header: "Resources"},
-		//{Header: "Providers"},
-		//{Header: "Requirements"},
-		//{Header: "Inputs"},
-		//{Header: "Outputs"},
-		//{Header: "Testing"},
 	}
 
 	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
