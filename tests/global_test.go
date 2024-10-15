@@ -68,14 +68,23 @@ func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
 
     // Create SectionValidator separately to initialize foundSections
     sectionValidator := NewSectionValidator(mv.data)
-    mv.validators = []Validator{
+	 mv.validators = []Validator{
         sectionValidator,
         NewFileValidator(absReadmePath),
         NewURLValidator(mv.data),
         NewTerraformDefinitionValidator(mv.data),
-        NewItemValidator(mv.data, "Variables", "variable", "Inputs", "variables.tf"),
-        NewItemValidator(mv.data, "Outputs", "output", "Outputs", "outputs.tf"),
+        NewItemValidator(mv.data, "Variables", "variable", []string{"Required Inputs", "Optional Inputs"}, "variables.tf"),
+        NewItemValidator(mv.data, "Outputs", "output", []string{"Outputs"}, "outputs.tf"),
     }
+
+    //mv.validators = []Validator{
+        //sectionValidator,
+        //NewFileValidator(absReadmePath),
+        //NewURLValidator(mv.data),
+        //NewTerraformDefinitionValidator(mv.data),
+        //NewItemValidator(mv.data, "Variables", "variable", "Inputs", "variables.tf"),
+        //NewItemValidator(mv.data, "Outputs", "output", "Outputs", "outputs.tf"),
+    //}
 
     // Initialize foundSections
     for _, section := range sectionValidator.sections {
@@ -128,8 +137,15 @@ func (mv *MarkdownValidator) Validate() []error {
     var allErrors []error
     for _, validator := range mv.validators {
         if itemValidator, ok := validator.(*ItemValidator); ok {
-            // Skip ItemValidator if the section wasn't found
-            if !mv.foundSections[itemValidator.section] {
+            // Check if any of the sections exist
+            sectionExists := false
+            for _, section := range itemValidator.sections {
+                if mv.foundSections[section] {
+                    sectionExists = true
+                    break
+                }
+            }
+            if !sectionExists {
                 continue
             }
         }
@@ -137,6 +153,20 @@ func (mv *MarkdownValidator) Validate() []error {
     }
     return allErrors
 }
+
+//func (mv *MarkdownValidator) Validate() []error {
+    //var allErrors []error
+    //for _, validator := range mv.validators {
+        //if itemValidator, ok := validator.(*ItemValidator); ok {
+            //// Skip ItemValidator if the section wasn't found
+            //if !mv.foundSections[itemValidator.section] {
+                //continue
+            //}
+        //}
+        //allErrors = append(allErrors, validator.Validate()...)
+    //}
+    //return allErrors
+//}
 
 //func (mv *MarkdownValidator) Validate() []error {
     //var allErrors []error
@@ -384,22 +414,40 @@ func (tdv *TerraformDefinitionValidator) Validate() []error {
 
 // ItemValidator validates items in Terraform and markdown
 type ItemValidator struct {
-	data      string
-	itemType  string
-	blockType string
-	section   string
-	fileName  string
+    data      string
+    itemType  string
+    blockType string
+    sections  []string // Change this to a slice of strings
+    fileName  string
+}
+//type ItemValidator struct {
+	//data      string
+	//itemType  string
+	//blockType string
+	//section   string
+	//fileName  string
+//}
+
+func NewItemValidator(data, itemType, blockType string, sections []string, fileName string) *ItemValidator {
+    return &ItemValidator{
+        data:      data,
+        itemType:  itemType,
+        blockType: blockType,
+        sections:  sections,
+        fileName:  fileName,
+    }
 }
 
-func NewItemValidator(data, itemType, blockType, section, fileName string) *ItemValidator {
-	return &ItemValidator{
-		data:      data,
-		itemType:  itemType,
-		blockType: blockType,
-		section:   section,
-		fileName:  fileName,
-	}
-}
+
+//func NewItemValidator(data, itemType, blockType, section, fileName string) *ItemValidator {
+	//return &ItemValidator{
+		//data:      data,
+		//itemType:  itemType,
+		//blockType: blockType,
+		//section:   section,
+		//fileName:  fileName,
+	//}
+//}
 
 func (iv *ItemValidator) Validate() []error {
     workspace := os.Getenv("GITHUB_WORKSPACE")
@@ -416,10 +464,33 @@ func (iv *ItemValidator) Validate() []error {
         return []error{err}
     }
 
-    mdItems := extractMarkdownSectionItems(iv.data, iv.section)
+    var mdItems []string
+    for _, section := range iv.sections {
+        mdItems = append(mdItems, extractMarkdownSectionItems(iv.data, section)...)
+    }
 
     return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
 }
+
+//func (iv *ItemValidator) Validate() []error {
+    //workspace := os.Getenv("GITHUB_WORKSPACE")
+    //if workspace == "" {
+        //var err error
+        //workspace, err = os.Getwd()
+        //if err != nil {
+            //return []error{fmt.Errorf("failed to get current working directory: %v", err)}
+        //}
+    //}
+    //filePath := filepath.Join(workspace, "caller", iv.fileName)
+    //tfItems, err := extractTerraformItems(filePath, iv.blockType)
+    //if err != nil {
+        //return []error{err}
+    //}
+
+    //mdItems := extractMarkdownSectionItems(iv.data, iv.section)
+
+    //return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
+//}
 
 //func (iv *ItemValidator) Validate() []error {
 	//workspace := os.Getenv("GITHUB_WORKSPACE")
@@ -605,7 +676,7 @@ func extractFromFilePath(filePath string) ([]string, []string, error) {
 	return resources, dataSources, nil
 }
 
-func extractMarkdownSectionItems(data, sectionName string) []string {
+func extractMarkdownSectionItems(data string, sectionNames ...string) []string {
     extensions := parser.CommonExtensions | parser.AutoHeadingIDs
     p := parser.NewWithExtensions(extensions)
     rootNode := p.Parse([]byte(data))
@@ -617,12 +688,12 @@ func extractMarkdownSectionItems(data, sectionName string) []string {
         if heading, ok := n.(*ast.Heading); ok && entering {
             headingText := strings.TrimSpace(extractText(heading))
             if heading.Level == 2 {
-                if strings.EqualFold(headingText, sectionName) ||
-                   strings.EqualFold(headingText, "Required "+sectionName) ||
-                   strings.EqualFold(headingText, "Optional "+sectionName) {
-                    inTargetSection = true
-                } else if inTargetSection {
-                    inTargetSection = false
+                inTargetSection = false
+                for _, sectionName := range sectionNames {
+                    if strings.EqualFold(headingText, sectionName) {
+                        inTargetSection = true
+                        break
+                    }
                 }
             } else if heading.Level == 3 && inTargetSection {
                 inputName := strings.Trim(headingText, " []")
@@ -634,6 +705,36 @@ func extractMarkdownSectionItems(data, sectionName string) []string {
 
     return items
 }
+
+//func extractMarkdownSectionItems(data, sectionName string) []string {
+    //extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+    //p := parser.NewWithExtensions(extensions)
+    //rootNode := p.Parse([]byte(data))
+
+    //var items []string
+    //inTargetSection := false
+
+    //ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
+        //if heading, ok := n.(*ast.Heading); ok && entering {
+            //headingText := strings.TrimSpace(extractText(heading))
+            //if heading.Level == 2 {
+                //if strings.EqualFold(headingText, sectionName) ||
+                   //strings.EqualFold(headingText, "Required "+sectionName) ||
+                   //strings.EqualFold(headingText, "Optional "+sectionName) {
+                    //inTargetSection = true
+                //} else if inTargetSection {
+                    //inTargetSection = false
+                //}
+            //} else if heading.Level == 3 && inTargetSection {
+                //inputName := strings.Trim(headingText, " []")
+                //items = append(items, inputName)
+            //}
+        //}
+        //return ast.GoToNext
+    //})
+
+    //return items
+//}
 
 //func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
 	//extensions := parser.CommonExtensions | parser.AutoHeadingIDs
