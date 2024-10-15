@@ -30,7 +30,6 @@ type MarkdownValidator struct {
 	validators []Validator
 }
 
-// NewMarkdownValidator creates a new MarkdownValidator
 func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
 	if envPath := os.Getenv("README_PATH"); envPath != "" {
 		readmePath = envPath
@@ -41,31 +40,28 @@ func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
 		return nil, fmt.Errorf("failed to get absolute path: %v", err)
 	}
 
-	dataBytes, err := os.ReadFile(absReadmePath)
+	data, err := os.ReadFile(absReadmePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %v", err)
 	}
-	data := string(dataBytes)
 
 	mv := &MarkdownValidator{
 		readmePath: absReadmePath,
-		data:       data,
+		data:       string(data),
 	}
 
-	// Initialize validators
 	mv.validators = []Validator{
-		NewSectionValidator(data),
+		NewSectionValidator(mv.data),
 		NewFileValidator(absReadmePath),
-		NewURLValidator(data),
-		NewTerraformDefinitionValidator(data),
-		NewItemValidator(data, "Variables", "variable", "Inputs", "variables.tf"),
-		NewItemValidator(data, "Outputs", "output", "Outputs", "outputs.tf"),
+		NewURLValidator(mv.data),
+		NewTerraformDefinitionValidator(mv.data),
+		NewItemValidator(mv.data, "Variables", "variable", "Inputs", "variables.tf"),
+		NewItemValidator(mv.data, "Outputs", "output", "Outputs", "outputs.tf"),
 	}
 
 	return mv, nil
 }
 
-// Validate runs all registered validators
 func (mv *MarkdownValidator) Validate() []error {
 	var allErrors []error
 	for _, validator := range mv.validators {
@@ -74,63 +70,44 @@ func (mv *MarkdownValidator) Validate() []error {
 	return allErrors
 }
 
-// Section represents a markdown section
-type Section struct {
-	Header string
-}
-
 // SectionValidator validates markdown sections
 type SectionValidator struct {
 	data     string
-	sections []Section
+	sections []string
 	rootNode ast.Node
 }
 
-// NewSectionValidator creates a new SectionValidator
 func NewSectionValidator(data string) *SectionValidator {
-	sections := []Section{
-		{Header: "Goals"},
-		{Header: "Non-Goals"},
-		{Header: "Resources"},
-		{Header: "Providers"},
-		{Header: "Requirements"},
-		{Header: "Optional Inputs"},
-		{Header: "Required Inputs"},
-		{Header: "Outputs"},
-		{Header: "Testing"},
+	sections := []string{
+		"Goals", "Non-Goals", "Resources", "Providers", "Requirements",
+		"Optional Inputs", "Required Inputs", "Outputs", "Testing",
 	}
 
 	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
 	p := parser.NewWithExtensions(extensions)
 	rootNode := markdown.Parse([]byte(data), p)
 
-	return &SectionValidator{
-		data:     data,
-		sections: sections,
-		rootNode: rootNode,
-	}
+	return &SectionValidator{data: data, sections: sections, rootNode: rootNode}
 }
 
-// Validate validates the sections in the markdown
 func (sv *SectionValidator) Validate() []error {
 	var allErrors []error
 	for _, section := range sv.sections {
-		allErrors = append(allErrors, section.validate(sv.rootNode)...)
+		if err := sv.validateSection(section); err != nil {
+			allErrors = append(allErrors, err)
+		}
 	}
 	return allErrors
 }
 
-// validate checks if a section is present
-func (s Section) validate(rootNode ast.Node) []error {
-	var errors []error
+func (sv *SectionValidator) validateSection(sectionName string) error {
 	found := false
-
-	ast.WalkFunc(rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+	ast.WalkFunc(sv.rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
 		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
 			text := strings.TrimSpace(extractText(heading))
-			if strings.EqualFold(text, s.Header) ||
-				strings.EqualFold(text, s.Header+"s") ||
-				(s.Header == "Inputs" && (strings.EqualFold(text, "Required Inputs") || strings.EqualFold(text, "Optional Inputs"))) {
+			if strings.EqualFold(text, sectionName) ||
+				strings.EqualFold(text, sectionName+"s") ||
+				(sectionName == "Inputs" && (strings.EqualFold(text, "Required Inputs") || strings.EqualFold(text, "Optional Inputs"))) {
 				found = true
 				return ast.SkipChildren
 			}
@@ -139,12 +116,12 @@ func (s Section) validate(rootNode ast.Node) []error {
 	})
 
 	if !found {
-		errors = append(errors, compareHeaders(s.Header, ""))
+		return fmt.Errorf("incorrect header: expected '%s', found 'not present'", sectionName)
 	}
-
-	return errors
+	return nil
 }
 
+// FileValidator validates the presence of required files
 type FileValidator struct {
 	files []string
 }
@@ -158,39 +135,33 @@ func NewFileValidator(readmePath string) *FileValidator {
 		filepath.Join(rootDir, "terraform.tf"),
 		filepath.Join(rootDir, "Makefile"),
 	}
-	return &FileValidator{
-		files: files,
-	}
+	return &FileValidator{files: files}
 }
 
-// Validate checks if required files exist and are not empty
 func (fv *FileValidator) Validate() []error {
 	var allErrors []error
 	for _, filePath := range fv.files {
-		allErrors = append(allErrors, validateFile(filePath)...)
+		if err := validateFile(filePath); err != nil {
+			allErrors = append(allErrors, err)
+		}
 	}
 	return allErrors
 }
 
-// validateFile checks if a file exists and is not empty
-func validateFile(filePath string) []error {
-	var errors []error
+func validateFile(filePath string) error {
 	fileInfo, err := os.Stat(filePath)
-	baseName := filepath.Base(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			errors = append(errors, formatError("file does not exist:\n  %s", baseName))
-		} else {
-			errors = append(errors, formatError("error accessing file:\n  %s\n  %v", baseName, err))
+			return fmt.Errorf("file does not exist: %s", filepath.Base(filePath))
 		}
-		return errors
+		return fmt.Errorf("error accessing file: %s: %v", filepath.Base(filePath), err)
 	}
 
 	if fileInfo.Size() == 0 {
-		errors = append(errors, formatError("file is empty:\n  %s", baseName))
+		return fmt.Errorf("file is empty: %s", filepath.Base(filePath))
 	}
 
-	return errors
+	return nil
 }
 
 // URLValidator validates URLs in the markdown
@@ -198,20 +169,13 @@ type URLValidator struct {
 	data string
 }
 
-// NewURLValidator creates a new URLValidator
 func NewURLValidator(data string) *URLValidator {
 	return &URLValidator{data: data}
 }
 
-// Validate checks all URLs in the markdown for accessibility
 func (uv *URLValidator) Validate() []error {
-	return validateURLs(uv.data)
-}
-
-// validateURLs checks if URLs in the data are accessible
-func validateURLs(data string) []error {
 	rxStrict := xurls.Strict()
-	urls := rxStrict.FindAllString(data, -1)
+	urls := rxStrict.FindAllString(uv.data, -1)
 
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(urls))
@@ -241,16 +205,15 @@ func validateURLs(data string) []error {
 	return errors
 }
 
-// validateSingleURL checks if a single URL is accessible
 func validateSingleURL(url string) error {
 	resp, err := http.Get(url)
 	if err != nil {
-		return formatError("error accessing URL:\n  %s\n  %v", url, err)
+		return fmt.Errorf("error accessing URL: %s: %v", url, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return formatError("URL returned non-OK status:\n  %s\n  Status: %d", url, resp.StatusCode)
+		return fmt.Errorf("URL returned non-OK status: %s: Status: %d", url, resp.StatusCode)
 	}
 
 	return nil
@@ -261,12 +224,10 @@ type TerraformDefinitionValidator struct {
 	data string
 }
 
-// NewTerraformDefinitionValidator creates a new TerraformDefinitionValidator
 func NewTerraformDefinitionValidator(data string) *TerraformDefinitionValidator {
 	return &TerraformDefinitionValidator{data: data}
 }
 
-// Validate compares Terraform resources with those documented in the markdown
 func (tdv *TerraformDefinitionValidator) Validate() []error {
 	tfResources, tfDataSources, err := extractTerraformResources()
 	if err != nil {
@@ -294,7 +255,6 @@ type ItemValidator struct {
 	fileName  string
 }
 
-// NewItemValidator creates a new ItemValidator
 func NewItemValidator(data, itemType, blockType, section, fileName string) *ItemValidator {
 	return &ItemValidator{
 		data:      data,
@@ -305,64 +265,47 @@ func NewItemValidator(data, itemType, blockType, section, fileName string) *Item
 	}
 }
 
-
 func (iv *ItemValidator) Validate() []error {
-    workspace := os.Getenv("GITHUB_WORKSPACE")
-    if workspace == "" {
-        var err error
-        workspace, err = os.Getwd()
-        if err != nil {
-            return []error{fmt.Errorf("failed to get current working directory: %v", err)}
-        }
-    }
-    filePath := filepath.Join(workspace, "caller", iv.fileName)
-    tfItems, err := extractTerraformItems(filePath, iv.blockType)
-    if err != nil {
-        return []error{err}
-    }
+	workspace := os.Getenv("GITHUB_WORKSPACE")
+	if workspace == "" {
+		var err error
+		workspace, err = os.Getwd()
+		if err != nil {
+			return []error{fmt.Errorf("failed to get current working directory: %v", err)}
+		}
+	}
+	filePath := filepath.Join(workspace, "caller", iv.fileName)
+	tfItems, err := extractTerraformItems(filePath, iv.blockType)
+	if err != nil {
+		return []error{err}
+	}
 
-    mdItems, err := extractMarkdownSectionItems(iv.data, iv.section)
-    if err != nil {
-        return []error{err}
-    }
+	mdItems, err := extractMarkdownSectionItems(iv.data, iv.section)
+	if err != nil {
+		return []error{err}
+	}
 
-    return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
+	return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
 }
 
 // Helper functions
 
-// compareHeaders compares expected and actual headers
-func compareHeaders(expected, actual string) error {
-	if expected != actual {
-		if actual == "" {
-			return formatError("incorrect header:\n  expected '%s', found 'not present'", expected)
+func extractText(node ast.Node) string {
+	var sb strings.Builder
+	ast.WalkFunc(node, func(n ast.Node, entering bool) ast.WalkStatus {
+		if entering {
+			switch tn := n.(type) {
+			case *ast.Text:
+				sb.Write(tn.Literal)
+			case *ast.Code:
+				sb.Write(tn.Leaf.Literal)
+			}
 		}
-		return formatError("incorrect header:\n  expected '%s', found '%s'", expected, actual)
-	}
-	return nil
+		return ast.GoToNext
+	})
+	return sb.String()
 }
 
-// formatError formats an error message
-func formatError(format string, args ...interface{}) error {
-	return fmt.Errorf(format, args...)
-}
-
-// findMissingItems finds items in a that are not in b
-func findMissingItems(a, b []string) []string {
-	bSet := make(map[string]struct{}, len(b))
-	for _, x := range b {
-		bSet[x] = struct{}{}
-	}
-	var missing []string
-	for _, x := range a {
-		if _, found := bSet[x]; !found {
-			missing = append(missing, x)
-		}
-	}
-	return missing
-}
-
-// extractTerraformItems extracts item names from a Terraform file given the block type
 func extractTerraformItems(filePath string, blockType string) ([]string, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
@@ -398,24 +341,6 @@ func extractTerraformItems(filePath string, blockType string) ([]string, error) 
 	return items, nil
 }
 
-// extractText extracts text from a node, including code spans
-func extractText(node ast.Node) string {
-	var sb strings.Builder
-	ast.WalkFunc(node, func(n ast.Node, entering bool) ast.WalkStatus {
-		if entering {
-			switch tn := n.(type) {
-			case *ast.Text:
-				sb.Write(tn.Literal)
-			case *ast.Code:
-				sb.Write(tn.Leaf.Literal)
-			}
-		}
-		return ast.GoToNext
-	})
-	return sb.String()
-}
-
-// extractTerraformResources extracts resources and data sources from Terraform files
 func extractTerraformResources() ([]string, []string, error) {
 	var resources []string
 	var dataSources []string
@@ -525,39 +450,39 @@ func extractFromFilePath(filePath string) ([]string, []string, error) {
 }
 
 func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
-    extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-    p := parser.NewWithExtensions(extensions)
-    rootNode := p.Parse([]byte(data))
+	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+	p := parser.NewWithExtensions(extensions)
+	rootNode := p.Parse([]byte(data))
 
-    var items []string
-    inTargetSection := false
-    sectionFound := false
+	var items []string
+	inTargetSection := false
+	sectionFound := false
 
-    ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
-        if heading, ok := n.(*ast.Heading); ok && entering {
-            headingText := strings.TrimSpace(extractText(heading))
-            if heading.Level == 2 {
-                if strings.EqualFold(headingText, sectionName) ||
-                   strings.EqualFold(headingText, "Required "+sectionName) ||
-                   strings.EqualFold(headingText, "Optional "+sectionName) {
-                    inTargetSection = true
-                    sectionFound = true
-                } else if inTargetSection {
-                    inTargetSection = false
-                }
-            } else if heading.Level == 3 && inTargetSection {
-                inputName := strings.Trim(headingText, " []")
-                items = append(items, inputName)
-            }
-        }
-        return ast.GoToNext
-    })
+	ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
+		if heading, ok := n.(*ast.Heading); ok && entering {
+			headingText := strings.TrimSpace(extractText(heading))
+			if heading.Level == 2 {
+				if strings.EqualFold(headingText, sectionName) ||
+					strings.EqualFold(headingText, "Required "+sectionName) ||
+					strings.EqualFold(headingText, "Optional "+sectionName) {
+					inTargetSection = true
+					sectionFound = true
+				} else if inTargetSection {
+					inTargetSection = false
+				}
+			} else if heading.Level == 3 && inTargetSection {
+				inputName := strings.Trim(headingText, " []")
+				items = append(items, inputName)
+			}
+		}
+		return ast.GoToNext
+	})
 
-    if !sectionFound {
-        return nil, fmt.Errorf("%s section not found", sectionName)
-    }
+	if !sectionFound {
+		return nil, fmt.Errorf("%s section not found", sectionName)
+	}
 
-    return items, nil
+	return items, nil
 }
 
 func extractReadmeResources(data string) ([]string, []string, error) {
@@ -587,7 +512,6 @@ func extractReadmeResources(data string) ([]string, []string, error) {
 					resourceName = strings.TrimPrefix(resourceName, "[")
 					resources = append(resources, resourceName)
 
-					// Also add the base resource type without the symbolic name
 					baseName := strings.Split(resourceName, ".")[0]
 					if baseName != resourceName {
 						resources = append(resources, baseName)
@@ -611,7 +535,6 @@ func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []e
 	mdSet := make(map[string]bool)
 	reported := make(map[string]bool)
 
-	// Helper function to get the full resource name
 	getFullName := func(items []string, baseName string) string {
 		for _, item := range items {
 			if strings.HasPrefix(item, baseName+".") {
@@ -636,7 +559,7 @@ func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []e
 		baseName := strings.Split(tfItem, ".")[0]
 		if !mdSet[tfItem] && !mdSet[baseName] && !reported[baseName] {
 			fullName := getFullName(tfItems, baseName)
-			errors = append(errors, formatError("%s in Terraform but missing in markdown: %s", itemType, fullName))
+			errors = append(errors, fmt.Errorf("%s in Terraform but missing in markdown: %s", itemType, fullName))
 			reported[baseName] = true
 		}
 	}
@@ -645,7 +568,7 @@ func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []e
 		baseName := strings.Split(mdItem, ".")[0]
 		if !tfSet[mdItem] && !tfSet[baseName] && !reported[baseName] {
 			fullName := getFullName(mdItems, baseName)
-			errors = append(errors, formatError("%s in markdown but missing in Terraform: %s", itemType, fullName))
+			errors = append(errors, fmt.Errorf("%s in markdown but missing in Terraform: %s", itemType, fullName))
 			reported[baseName] = true
 		}
 	}
