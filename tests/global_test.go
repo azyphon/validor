@@ -305,6 +305,7 @@ func NewItemValidator(data, itemType, blockType, section, fileName string) *Item
 	}
 }
 
+
 func (iv *ItemValidator) Validate() []error {
     workspace := os.Getenv("GITHUB_WORKSPACE")
     if workspace == "" {
@@ -325,12 +326,35 @@ func (iv *ItemValidator) Validate() []error {
         return []error{err}
     }
 
-    if len(tfItems) > 0 && len(mdItems) == 0 {
-        return []error{fmt.Errorf("%s section in markdown is empty but Terraform has items", iv.section)}
-    }
-
     return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
 }
+
+//func (iv *ItemValidator) Validate() []error {
+    //workspace := os.Getenv("GITHUB_WORKSPACE")
+    //if workspace == "" {
+        //var err error
+        //workspace, err = os.Getwd()
+        //if err != nil {
+            //return []error{fmt.Errorf("failed to get current working directory: %v", err)}
+        //}
+    //}
+    //filePath := filepath.Join(workspace, "caller", iv.fileName)
+    //tfItems, err := extractTerraformItems(filePath, iv.blockType)
+    //if err != nil {
+        //return []error{err}
+    //}
+
+    //mdItems, err := extractMarkdownSectionItems(iv.data, iv.section)
+    //if err != nil {
+        //return []error{err}
+    //}
+
+    //if len(tfItems) > 0 && len(mdItems) == 0 {
+        //return []error{fmt.Errorf("%s section in markdown is empty but Terraform has items", iv.section)}
+    //}
+
+    //return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
+//}
 
 // Validate compares Terraform items with those documented in the markdown
 //func (iv *ItemValidator) Validate() []error {
@@ -569,7 +593,7 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
                    strings.EqualFold(headingText, "Optional "+sectionName) {
                     inTargetSection = true
                     sectionFound = true
-                } else {
+                } else if inTargetSection {
                     inTargetSection = false
                 }
             } else if heading.Level == 3 && inTargetSection {
@@ -586,6 +610,42 @@ func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
 
     return items, nil
 }
+
+//func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
+    //extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+    //p := parser.NewWithExtensions(extensions)
+    //rootNode := p.Parse([]byte(data))
+
+    //var items []string
+    //inTargetSection := false
+    //sectionFound := false
+
+    //ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
+        //if heading, ok := n.(*ast.Heading); ok && entering {
+            //headingText := strings.TrimSpace(extractText(heading))
+            //if heading.Level == 2 {
+                //if strings.EqualFold(headingText, sectionName) ||
+                   //strings.EqualFold(headingText, "Required "+sectionName) ||
+                   //strings.EqualFold(headingText, "Optional "+sectionName) {
+                    //inTargetSection = true
+                    //sectionFound = true
+                //} else {
+                    //inTargetSection = false
+                //}
+            //} else if heading.Level == 3 && inTargetSection {
+                //inputName := strings.Trim(headingText, " []")
+                //items = append(items, inputName)
+            //}
+        //}
+        //return ast.GoToNext
+    //})
+
+    //if !sectionFound {
+        //return nil, fmt.Errorf("%s section not found", sectionName)
+    //}
+
+    //return items, nil
+//}
 
 // Update the extractMarkdownSectionItems function
 //func extractMarkdownSectionItems(data, sectionName string) ([]string, error) {
