@@ -6,15 +6,9 @@
 ### Features
 
 * **deps:** bump github.com/hashicorp/hcl/v2 in /tests ([#28](https://github.com/aztfmods/validor/issues/28)) ([546ccec](https://github.com/aztfmods/validor/commit/546ccecc2ddd74062890d1c7dbb3247b0ad2cb98))
-* update documentation ([7c6b133](https://github.com/aztfmods/validor/commit/7c6b1334497a1a9e797553fb41f13f0575b1ac31))
-* update documentation ([de18431](https://github.com/aztfmods/validor/commit/de184312c6b6be68c08a4220273cf0770436c260))
-* update documentation ([3d845b3](https://github.com/aztfmods/validor/commit/3d845b3b1b3fa24e8429ee4f501f658294add551))
-* update documentation ([fff6f6c](https://github.com/aztfmods/validor/commit/fff6f6c6ddf12fb3c8ffc6cc6b507b8f206a11cb))
-
 
 ### Bug Fixes
 
-* correct node literal extraction and block type handling ([f81c602](https://github.com/aztfmods/validor/commit/f81c6026732decccbc1419878efcb2d213202c53))
 * replace if else with switch statement for block type checks and removed redundant leaf field in ast parsing ([#30](https://github.com/aztfmods/validor/issues/30)) ([84a3a5a](https://github.com/aztfmods/validor/commit/84a3a5ae50f1766af4fbb17a97c3030ce2950748))
 
 ## [1.6.1](https://github.com/aztfmods/validor/compare/v1.6.0...v1.6.1) (2024-09-25)
