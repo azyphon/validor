@@ -105,7 +105,7 @@ func (sv *SectionValidator) Validate() []error {
 
 func NewSectionValidator(data string) *SectionValidator {
 	sections := []string{
-		"Goals", "Non-Goals", "Resources", "Providers", "Requirements",
+		"Goals", "Resources", "Providers", "Requirements",
 		"Optional Inputs", "Required Inputs", "Outputs", "Testing",
 	}
 
