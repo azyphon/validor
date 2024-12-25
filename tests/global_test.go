@@ -38,6 +38,12 @@ type SectionValidator struct {
 	rootNode ast.Node
 }
 
+// type SectionValidator struct {
+// 	data     string
+// 	sections []string
+// 	rootNode ast.Node
+// }
+
 func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
 	if envPath := os.Getenv("README_PATH"); envPath != "" {
 		readmePath = envPath
@@ -95,13 +101,17 @@ func (mv *MarkdownValidator) Validate() []error {
 }
 
 func (sv *SectionValidator) Validate() []error {
-	var allErrors []error
-	for _, section := range sv.sections {
-		if !sv.validateSection(section) {
-			allErrors = append(allErrors, fmt.Errorf("incorrect header: expected '%s', found 'not present'", section))
-		}
-	}
-	return allErrors
+    var allErrors []error
+
+    // Check each required section
+    for _, section := range sv.sections {
+        if !sv.validateSection(section) {
+            // Add explicit error for missing section
+            allErrors = append(allErrors, fmt.Errorf("required section missing: '%s'", section))
+        }
+    }
+
+    return allErrors
 }
 
 func NewSectionValidator(data string) *SectionValidator {
@@ -118,20 +128,20 @@ func NewSectionValidator(data string) *SectionValidator {
 }
 
 func (sv *SectionValidator) validateSection(sectionName string) bool {
-	found := false
-	ast.WalkFunc(sv.rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
-		if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
-			text := strings.TrimSpace(extractText(heading))
-			if strings.EqualFold(text, sectionName) ||
-				strings.EqualFold(text, sectionName+"s") ||
-				(sectionName == "Inputs" && (strings.EqualFold(text, "Required Inputs") || strings.EqualFold(text, "Optional Inputs"))) {
-				found = true
-				return ast.SkipChildren
-			}
-		}
-		return ast.GoToNext
-	})
-	return found
+    found := false
+    ast.WalkFunc(sv.rootNode, func(node ast.Node, entering bool) ast.WalkStatus {
+        if heading, ok := node.(*ast.Heading); ok && entering && heading.Level == 2 {
+            text := strings.TrimSpace(extractText(heading))
+            if strings.EqualFold(text, sectionName) ||
+                strings.EqualFold(text, sectionName+"s") ||
+                (sectionName == "Inputs" && (strings.EqualFold(text, "Required Inputs") || strings.EqualFold(text, "Optional Inputs"))) {
+                found = true
+                return ast.SkipChildren
+            }
+        }
+        return ast.GoToNext
+    })
+    return found
 }
 
 // FileValidator validates the presence of required files
