@@ -38,12 +38,6 @@ type SectionValidator struct {
 	rootNode ast.Node
 }
 
-// type SectionValidator struct {
-// 	data     string
-// 	sections []string
-// 	rootNode ast.Node
-// }
-
 func NewMarkdownValidator(readmePath string) (*MarkdownValidator, error) {
 	if envPath := os.Getenv("README_PATH"); envPath != "" {
 		readmePath = envPath
