@@ -29,6 +29,7 @@ type MarkdownValidator struct {
 	data          string
 	validators    []Validator
 	foundSections map[string]bool
+	hclCache      sync.Map // Cache for parsed HCL files
 }
 
 type SectionValidator struct {
@@ -298,8 +299,17 @@ func (iv *ItemValidator) Validate() []error {
 	return compareTerraformAndMarkdown(tfItems, mdItems, iv.itemType)
 }
 
+var stringBuilderPool = sync.Pool{
+	New: func() interface{} {
+		return &strings.Builder{}
+	},
+}
+
 func extractText(node ast.Node) string {
-	var sb strings.Builder
+	sb := stringBuilderPool.Get().(*strings.Builder)
+	sb.Reset()
+	defer stringBuilderPool.Put(sb)
+
 	ast.WalkFunc(node, func(n ast.Node, entering bool) ast.WalkStatus {
 		if entering {
 			switch tn := n.(type) {
@@ -350,8 +360,14 @@ func extractTerraformItems(filePath string, blockType string) ([]string, error) 
 }
 
 func extractTerraformResources() ([]string, []string, error) {
-	var resources []string
-	var dataSources []string
+	var (
+		resources      = make([]string, 0, 32)
+		dataSources    = make([]string, 0, 32)
+		resourceChan   = make(chan []string, 2)
+		dataSourceChan = make(chan []string, 2)
+		errChan        = make(chan error, 2)
+		wg             sync.WaitGroup
+	)
 
 	workspace := os.Getenv("GITHUB_WORKSPACE")
 	if workspace == "" {
@@ -361,21 +377,53 @@ func extractTerraformResources() ([]string, []string, error) {
 			return nil, nil, fmt.Errorf("failed to get current working directory: %v", err)
 		}
 	}
-	mainPath := filepath.Join(workspace, "caller", "main.tf")
-	specificResources, specificDataSources, err := extractFromFilePath(mainPath)
-	if err != nil && !os.IsNotExist(err) {
-		return nil, nil, err
-	}
-	resources = append(resources, specificResources...)
-	dataSources = append(dataSources, specificDataSources...)
 
-	modulesPath := filepath.Join(workspace, "caller", "modules")
-	modulesResources, modulesDataSources, err := extractRecursively(modulesPath)
-	if err != nil {
+	wg.Add(2)
+	// Process main.tf concurrently
+	go func() {
+		defer wg.Done()
+		mainPath := filepath.Join(workspace, "caller", "main.tf")
+		specificResources, specificDataSources, err := extractFromFilePath(mainPath)
+		if err != nil && !os.IsNotExist(err) {
+			errChan <- err
+			return
+		}
+		resourceChan <- specificResources
+		dataSourceChan <- specificDataSources
+	}()
+
+	// Process modules concurrently
+	go func() {
+		defer wg.Done()
+		modulesPath := filepath.Join(workspace, "caller", "modules")
+		modulesResources, modulesDataSources, err := extractRecursively(modulesPath)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		resourceChan <- modulesResources
+		dataSourceChan <- modulesDataSources
+	}()
+
+	go func() {
+		wg.Wait()
+		close(resourceChan)
+		close(dataSourceChan)
+		close(errChan)
+	}()
+
+	// Collect results
+	for r := range resourceChan {
+		resources = append(resources, r...)
+	}
+	for ds := range dataSourceChan {
+		dataSources = append(dataSources, ds...)
+	}
+
+	// Check for errors
+	if err := <-errChan; err != nil {
 		return nil, nil, err
 	}
-	resources = append(resources, modulesResources...)
-	dataSources = append(dataSources, modulesDataSources...)
 
 	return resources, dataSources, nil
 }
@@ -408,13 +456,21 @@ func extractRecursively(dirPath string) ([]string, []string, error) {
 	return resources, dataSources, nil
 }
 
+var hclParserPool = sync.Pool{
+	New: func() interface{} {
+		return hclparse.NewParser()
+	},
+}
+
 func extractFromFilePath(filePath string) ([]string, []string, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error reading file %s: %v", filepath.Base(filePath), err)
 	}
 
-	parser := hclparse.NewParser()
+	parser := hclParserPool.Get().(*hclparse.Parser)
+	defer hclParserPool.Put(parser)
+
 	file, parseDiags := parser.ParseHCL(content, filePath)
 	if parseDiags.HasErrors() {
 		return nil, nil, fmt.Errorf("error parsing HCL in %s: %v", filepath.Base(filePath), parseDiags)
@@ -489,123 +545,79 @@ func extractMarkdownSectionItems(data string, sectionNames ...string) []string {
 }
 
 func extractReadmeResources(data string) ([]string, []string, error) {
-    extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-    p := parser.NewWithExtensions(extensions)
-    rootNode := p.Parse([]byte(data))
+	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+	p := parser.NewWithExtensions(extensions)
+	rootNode := p.Parse([]byte(data))
 
-    var resources []string
-    var dataSources []string
-    inResourceSection := false
+	var resources []string
+	var dataSources []string
+	inResourceSection := false
 
-    ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
-        if heading, ok := n.(*ast.Heading); ok && entering {
-            headingText := extractText(heading)
-            if strings.Contains(headingText, "Resources") {
-                inResourceSection = true
-            } else if heading.Level <= 2 {
-                inResourceSection = false
-            }
-        }
+	ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
+		if heading, ok := n.(*ast.Heading); ok && entering {
+			headingText := extractText(heading)
+			if strings.Contains(headingText, "Resources") {
+				inResourceSection = true
+			} else if heading.Level <= 2 {
+				inResourceSection = false
+			}
+		}
 
-        if inResourceSection && entering {
-            if link, ok := n.(*ast.Link); ok {
-                linkText := extractText(link)
-                destination := string(link.Destination)
+		if inResourceSection && entering {
+			if link, ok := n.(*ast.Link); ok {
+				linkText := extractText(link)
+				destination := string(link.Destination)
 
-                if strings.Contains(linkText, "azurerm_") {
-                    resourceName := strings.Split(linkText, "]")[0]
-                    resourceName = strings.TrimPrefix(resourceName, "[")
+				if strings.Contains(linkText, "azurerm_") {
+					resourceName := strings.Split(linkText, "]")[0]
+					resourceName = strings.TrimPrefix(resourceName, "[")
 
-                    baseName := strings.Split(resourceName, ".")[0]
+					baseName := strings.Split(resourceName, ".")[0]
 
-                    // Check if it's a data source by looking at the URL
-                    if strings.Contains(destination, "/data-sources/") {
-                        if !contains(dataSources, resourceName) {
-                            dataSources = append(dataSources, resourceName)
-                        }
-                        if !contains(dataSources, baseName) {
-                            dataSources = append(dataSources, baseName)
-                        }
-                    } else {
-                        if !contains(resources, resourceName) {
-                            resources = append(resources, resourceName)
-                        }
-                        if !contains(resources, baseName) {
-                            resources = append(resources, baseName)
-                        }
-                    }
-                }
-            }
-        }
-        return ast.GoToNext
-    })
+					// Check if it's a data source by looking at the URL
+					if strings.Contains(destination, "/data-sources/") {
+						if !contains(dataSources, resourceName) {
+							dataSources = append(dataSources, resourceName)
+						}
+						if !contains(dataSources, baseName) {
+							dataSources = append(dataSources, baseName)
+						}
+					} else {
+						if !contains(resources, resourceName) {
+							resources = append(resources, resourceName)
+						}
+						if !contains(resources, baseName) {
+							resources = append(resources, baseName)
+						}
+					}
+				}
+			}
+		}
+		return ast.GoToNext
+	})
 
-    if len(resources) == 0 && len(dataSources) == 0 {
-        return nil, nil, errors.New("resources section not found or empty")
-    }
+	if len(resources) == 0 && len(dataSources) == 0 {
+		return nil, nil, errors.New("resources section not found or empty")
+	}
 
-    return resources, dataSources, nil
+	return resources, dataSources, nil
 }
 
 // Helper function to check if a string slice contains a value
 func contains(slice []string, str string) bool {
-    for _, v := range slice {
-        if v == str {
-            return true
-        }
-    }
-    return false
+	for _, v := range slice {
+		if v == str {
+			return true
+		}
+	}
+	return false
 }
 
-// func extractReadmeResources(data string) ([]string, []string, error) {
-// 	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-// 	p := parser.NewWithExtensions(extensions)
-// 	rootNode := p.Parse([]byte(data))
-//
-// 	var resources []string
-// 	var dataSources []string
-// 	inResourceSection := false
-//
-// 	ast.WalkFunc(rootNode, func(n ast.Node, entering bool) ast.WalkStatus {
-// 		if heading, ok := n.(*ast.Heading); ok && entering {
-// 			headingText := extractText(heading)
-// 			if strings.Contains(headingText, "Resources") {
-// 				inResourceSection = true
-// 			} else if heading.Level <= 2 {
-// 				inResourceSection = false
-// 			}
-// 		}
-//
-// 		if inResourceSection && entering {
-// 			if link, ok := n.(*ast.Link); ok {
-// 				linkText := extractText(link)
-// 				if strings.Contains(linkText, "azurerm_") {
-// 					resourceName := strings.Split(linkText, "]")[0]
-// 					resourceName = strings.TrimPrefix(resourceName, "[")
-// 					resources = append(resources, resourceName)
-//
-// 					baseName := strings.Split(resourceName, ".")[0]
-// 					if baseName != resourceName {
-// 						resources = append(resources, baseName)
-// 					}
-// 				}
-// 			}
-// 		}
-// 		return ast.GoToNext
-// 	})
-//
-// 	if len(resources) == 0 && len(dataSources) == 0 {
-// 		return nil, nil, errors.New("resources section not found or empty")
-// 	}
-//
-// 	return resources, dataSources, nil
-// }
-
 func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
-	var errors []error
-	tfSet := make(map[string]bool)
-	mdSet := make(map[string]bool)
-	reported := make(map[string]bool)
+	errors := make([]error, 0, len(tfItems)+len(mdItems))
+	tfSet := make(map[string]bool, len(tfItems)*2)
+	mdSet := make(map[string]bool, len(mdItems)*2)
+	reported := make(map[string]bool, len(tfItems)+len(mdItems))
 
 	getFullName := func(items []string, baseName string) string {
 		for _, item := range items {
@@ -666,7 +678,6 @@ func TestMarkdown(t *testing.T) {
 		}
 	}
 }
-
 
 // package main
 //
@@ -1180,14 +1191,29 @@ func TestMarkdown(t *testing.T) {
 // 		if inResourceSection && entering {
 // 			if link, ok := n.(*ast.Link); ok {
 // 				linkText := extractText(link)
+// 				destination := string(link.Destination)
+//
 // 				if strings.Contains(linkText, "azurerm_") {
 // 					resourceName := strings.Split(linkText, "]")[0]
 // 					resourceName = strings.TrimPrefix(resourceName, "[")
-// 					resources = append(resources, resourceName)
 //
 // 					baseName := strings.Split(resourceName, ".")[0]
-// 					if baseName != resourceName {
-// 						resources = append(resources, baseName)
+//
+// 					// Check if it's a data source by looking at the URL
+// 					if strings.Contains(destination, "/data-sources/") {
+// 						if !contains(dataSources, resourceName) {
+// 							dataSources = append(dataSources, resourceName)
+// 						}
+// 						if !contains(dataSources, baseName) {
+// 							dataSources = append(dataSources, baseName)
+// 						}
+// 					} else {
+// 						if !contains(resources, resourceName) {
+// 							resources = append(resources, resourceName)
+// 						}
+// 						if !contains(resources, baseName) {
+// 							resources = append(resources, baseName)
+// 						}
 // 					}
 // 				}
 // 			}
@@ -1200,6 +1226,16 @@ func TestMarkdown(t *testing.T) {
 // 	}
 //
 // 	return resources, dataSources, nil
+// }
+//
+// // Helper function to check if a string slice contains a value
+// func contains(slice []string, str string) bool {
+// 	for _, v := range slice {
+// 		if v == str {
+// 			return true
+// 		}
+// 	}
+// 	return false
 // }
 //
 // func compareTerraformAndMarkdown(tfItems, mdItems []string, itemType string) []error {
