@@ -2,9 +2,9 @@ name: validate
 
 on:
   workflow_call:
-    secrets:
-      PAT:
-        required: true
+    # secrets:
+    #   PAT:
+    #     required: true
 
 permissions:
   pull-requests: read
