@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/azyphon/validor/compare/v1.7.0...v1.8.0) (2025-03-10)
+
+
+### Features
+
+* refactor to consume the markparsr package ([#35](https://github.com/azyphon/validor/issues/35)) ([be66fc4](https://github.com/azyphon/validor/commit/be66fc4f4cd3f75deee9c243d87548fc40c7e0ad))
+
 ## [1.7.0](https://github.com/aztfmods/validor/compare/v1.6.1...v1.7.0) (2024-12-19)
 
 
