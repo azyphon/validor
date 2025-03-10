@@ -47,8 +47,8 @@ jobs:
     if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.user.login != 'release-please[bot]' }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.PAT }}
+        # with:
+        #   token: ${{ secrets.PAT }}
 
       - uses: terraform-linters/setup-tflint@v4
         name: Setup TFLint
@@ -83,7 +83,7 @@ jobs:
         with:
           repository: azyphon/validor
           path: called
-          token: ${{ secrets.PAT }}
+          # token: ${{ secrets.PAT }}
 
       - name: setup go
         uses: actions/setup-go@v5
@@ -100,7 +100,7 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
           path: caller
-          token: ${{ secrets.PAT }}
+          # token: ${{ secrets.PAT }}
           fetch-depth: 0
 
       - name: run global tests
