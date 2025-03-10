@@ -81,7 +81,7 @@ jobs:
       - name: check out called repo
         uses: actions/checkout@v4
         with:
-          repository: aztfmods/terraform-azure-workflows
+          repository: azyphon/validor
           path: called
           token: ${{ secrets.PAT }}
 
