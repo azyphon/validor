@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/azyphon/validor/compare/v1.8.0...v1.8.1) (2025-03-10)
+
+
+### Bug Fixes
+
+* fix org name change workflows ([#36](https://github.com/azyphon/validor/issues/36)) ([4665d64](https://github.com/azyphon/validor/commit/4665d641753102e6b6dcbc1e24ea9e09d11fc19a))
+
 ## [1.8.0](https://github.com/azyphon/validor/compare/v1.7.0...v1.8.0) (2025-03-10)
 
 
