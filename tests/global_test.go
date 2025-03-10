@@ -2,7 +2,6 @@ package test
 
 import (
 	"testing"
-
 	"github.com/azyphon/markparsr"
 )
 
