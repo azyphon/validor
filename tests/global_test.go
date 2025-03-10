@@ -10,6 +10,7 @@ func TestReadmeValidation(t *testing.T) {
 	config := &markparsr.Config{
 		ReadmePath:        "../README.md",
 		SkipURLValidation: true,
+		ValidationStyle:   "heading",
 	}
 
 	validator, err := markparsr.New(config)

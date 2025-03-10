@@ -2,7 +2,7 @@ module github.com/azyphon/validor
 
 go 1.24.1
 
-require github.com/azyphon/markparsr v1.1.0
+require github.com/azyphon/markparsr v1.2.0
 
 require (
 	github.com/agext/levenshtein v1.2.1 // indirect

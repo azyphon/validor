@@ -4,8 +4,8 @@ github.com/apparentlymart/go-textseg/v13 v13.0.0 h1:Y+KvPE1NYz0xl601PVImeQfFyEy6
 github.com/apparentlymart/go-textseg/v13 v13.0.0/go.mod h1:ZK2fH7c4NqDTLtiYLvIkEghdlcqw7yxLeM89kiTRPUo=
 github.com/apparentlymart/go-textseg/v15 v15.0.0 h1:uYvfpb3DyLSCGWnctWKGj857c6ew1u1fNQOlOtuGxQY=
 github.com/apparentlymart/go-textseg/v15 v15.0.0/go.mod h1:K8XmNZdhEBkdlyDdvbmmsvpAG721bKi0joRfFdHIWJ4=
-github.com/azyphon/markparsr v1.1.0 h1:Cso2KZBmO5cS6vYXFXpBwnFhcInb28/J0keSTwO8vtQ=
-github.com/azyphon/markparsr v1.1.0/go.mod h1:WjgZwqlaI+NgHWXiREVWvI8scGAhpa19RQdkKi7n/0s=
+github.com/azyphon/markparsr v1.2.0 h1:5GTy1tHgWd5o34W1fixCAdI0ZhXMMw2WPYy1fT3e9j0=
+github.com/azyphon/markparsr v1.2.0/go.mod h1:WjgZwqlaI+NgHWXiREVWvI8scGAhpa19RQdkKi7n/0s=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/go-test/deep v1.0.3 h1:ZrJSEWsXzPOxaZnFteGEfooLba+ju3FYIbOrS+rQd68=
