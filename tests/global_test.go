@@ -1,14 +1,18 @@
 package test
 
 import (
-	"testing"
-
 	"github.com/azyphon/markparsr"
+	"testing"
 )
 
-func TestReadmeValidation(t *testing.T) {
-	// You can specify a custom path or use the default "README.md"
-	validator, err := markparsr.NewReadmeValidator("../../README.md")
+// TestReadmeValidationExplicit validates Terraform module documentation.
+// When running locally, this test uses the path specified in the readmePath variable.
+// When running in CI/CD, environment variables README_PATH and MODULE_PATH will override
+// the paths if they are set.
+func TestReadmeValidationExplicit(t *testing.T) {
+	readmePath := "../module/README.md"
+
+	validator, err := markparsr.NewReadmeValidator(readmePath)
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
