@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0](https://github.com/azyphon/validor/compare/v1.8.1...v1.9.0) (2025-03-15)
+
+
+### Features
+
+* increment markparsr module ([#38](https://github.com/azyphon/validor/issues/38)) ([803982a](https://github.com/azyphon/validor/commit/803982a0c0f7858cc9d92287b3d53ca25b5636ff))
+
 ## [1.8.1](https://github.com/azyphon/validor/compare/v1.8.0...v1.8.1) (2025-03-10)
 
 
