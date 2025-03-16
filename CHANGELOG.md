@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.0](https://github.com/azyphon/validor/compare/v1.8.1...v1.9.0) (2025-03-16)
+
+
+### Features
+
+* increment markparsr module ([#38](https://github.com/azyphon/validor/issues/38)) ([803982a](https://github.com/azyphon/validor/commit/803982a0c0f7858cc9d92287b3d53ca25b5636ff))
+* markparsr version bump and small refactor readme path handling ([#41](https://github.com/azyphon/validor/issues/41)) ([eec4b45](https://github.com/azyphon/validor/commit/eec4b45475f2f8b83bf91e0a626763e4e046c4cf))
+
 ## [1.8.1](https://github.com/azyphon/validor/compare/v1.8.0...v1.8.1) (2025-03-10)
 
 
