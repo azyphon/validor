@@ -10,9 +10,8 @@ import (
 // When running in CI/CD, environment variables README_PATH and MODULE_PATH will override
 // the paths if they are set.
 func TestReadmeValidationExplicit(t *testing.T) {
-	readmePath := "../module/README.md"
 
-	validator, err := markparsr.NewReadmeValidator(readmePath)
+	validator, err := markparsr.NewReadmeValidator()
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
