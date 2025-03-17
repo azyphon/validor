@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/azyphon/validor/compare/v1.10.0...v1.11.0) (2025-03-17)
+
+
+### Features
+
+* **deps:** bump github.com/azyphon/markparsr in /tests ([#46](https://github.com/azyphon/validor/issues/46)) ([13f8303](https://github.com/azyphon/validor/commit/13f83031ea75adde80aedef52ede62f66278bda7))
+
 ## [1.10.0](https://github.com/azyphon/validor/compare/v1.9.0...v1.10.0) (2025-03-17)
 
 
